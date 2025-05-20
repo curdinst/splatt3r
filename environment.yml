@@ -6,6 +6,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - nvidia/label/cuda-12.5.1::cuda-toolkit
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
   - _sysroot_linux-64_curr_repodata_hack=3=haa98f57_10
