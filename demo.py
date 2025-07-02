@@ -24,6 +24,7 @@ import utils.export as export
 
 
 def get_reconstructed_scene(outdir, model, device, silent, image_size, ios_mode, filelist):
+    print("image size: ", image_size)
 
     assert len(filelist) == 1 or len(filelist) == 2, "Please provide one or two images"
     if ios_mode:

@@ -96,7 +96,10 @@ def save_as_ply(pred1, pred2, save_path):
         return quaternion, scale
 
     # Collect the Gaussian parameters
-    means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
+    if "means_in_other_view" in pred2.keys():
+        means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
+    else:
+        means = torch.stack([pred1["means"], pred2["means"]], dim=1)
     covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
     harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
     opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)

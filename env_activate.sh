@@ -1,0 +1,1 @@
+conda activate mast3r-slam-splatt3r
