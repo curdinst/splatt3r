@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: in3d
+Version: 0.0.1
+Requires-Dist: imgui@ file:///home/curdinst/repos/MASt3R-SLAM/thirdparty/in3d/thirdparty/pyimgui
+Requires-Dist: moderngl==5.12.0
+Requires-Dist: moderngl-window==2.4.6
+Requires-Dist: glfw
+Requires-Dist: pyglm
+Requires-Dist: msgpack
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: trimesh[easy]
+Dynamic: requires-dist

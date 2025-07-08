@@ -1,0 +1,9 @@
+imgui@ file:///home/curdinst/repos/MASt3R-SLAM/thirdparty/in3d/thirdparty/pyimgui
+moderngl==5.12.0
+moderngl-window==2.4.6
+glfw
+pyglm
+msgpack
+numpy
+matplotlib
+trimesh[easy]

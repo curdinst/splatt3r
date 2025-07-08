@@ -1,0 +1,16 @@
+# ninja log v5
+1	3960	1744798084	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/forward.o	c3e25c9b27c96ce9
+0	4294	1744798085	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/backward.o	c02390d62b83147a
+1	8782	1744798089	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/rasterizer_impl.o	db567f96cafbc5aa
+1	19103	1744798099	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/ext.o	f9c9cf18622698ff
+2	49860	1744798130	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/rasterize_points.o	eb7405fb25aff4d9
+17	3753	1744829582	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/forward.o	f4e333f0fd01e3e1
+17	4572	1744829583	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/backward.o	db9fc4d168d8f127
+17	8987	1744829588	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/rasterizer_impl.o	417160bd99a7273f
+18	20348	1744829599	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/ext.o	1d651bc1b76a7a67
+18	52109	1744829631	/home/curdinst/repos/MASt3R-SLAM/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/rasterize_points.o	14a637c3204b177c
+0	3636	1751538409	/home/curdinst/repos/splatt3r/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/forward.o	beee16b7bb040783
+0	3882	1751538410	/home/curdinst/repos/splatt3r/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/backward.o	914327234d2f42d7
+0	8817	1751538415	/home/curdinst/repos/splatt3r/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/cuda_rasterizer/rasterizer_impl.o	2d1e146717d61d48
+1	19140	1751538425	/home/curdinst/repos/splatt3r/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/ext.o	713e33838a92479d
+1	49556	1751538455	/home/curdinst/repos/splatt3r/thirdparty/diff-gaussian-rasterization-w-pose/build/temp.linux-x86_64-cpython-311/rasterize_points.o	691935e9e10f1086
