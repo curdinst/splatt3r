@@ -40,9 +40,10 @@ def get_reconstructed_scene(outdir, model, device, silent, image_size, ios_mode,
 
     output = model(imgs[0], imgs[1])
 
-    pred1, pred2 = output
+    pred1, pred2, pred1_lowres, pred2_lowres = output
     plyfile = os.path.join(outdir, 'gaussians.ply')
     export.save_as_ply(pred1, pred2, plyfile)
+    export.save_as_ply(pred1_lowres, pred2_lowres, os.path.join(outdir, 'gaussians_lowres.ply'))
     return plyfile
 
 if __name__ == '__main__':
@@ -85,7 +86,7 @@ if __name__ == '__main__':
     ]
 
 
-    # tmpdirname = ""
+    tmpdirname = "logs/"
 
     # igs = load_images(examples[0][:2], size=image_size, verbose=not silent)
     # reslt = model(igs[0], igs[1]) 
@@ -99,7 +100,8 @@ if __name__ == '__main__':
 
         cache_path = os.path.join(tmpdirname, chkpt_tag)
         os.makedirs(cache_path, exist_ok=True)
-
+        print("tmpdirname: ", tmpdirname)
+        tmpdirname = os.path.join("/home/curdinst/repos/splatt3r/", "logs")
         recon_fun = functools.partial(get_reconstructed_scene, tmpdirname, model, device, silent, image_size, ios_mode)
 
         if not ios_mode:

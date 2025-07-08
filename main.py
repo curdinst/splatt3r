@@ -91,11 +91,14 @@ class MAST3RGaussians(L.LightningModule):
             dec1, dec2 = self.encoder._decoder(feat1, pos1, feat2, pos2)
 
         # Train the downstream heads
-        pred1 = self.encoder._downstream_head(1, [tok.float() for tok in dec1], shape1)
-        pred2 = self.encoder._downstream_head(2, [tok.float() for tok in dec2], shape2)
+        pred1, pred1_lowres = self.encoder._downstream_head(1, [tok.float() for tok in dec1], shape1)
+        pred2, pred2_lowres = self.encoder._downstream_head(2, [tok.float() for tok in dec2], shape2)
 
         pred1['covariances'] = geometry.build_covariance(pred1['scales'], pred1['rotations'])
         pred2['covariances'] = geometry.build_covariance(pred2['scales'], pred2['rotations'])
+
+        pred1_lowres['covariances'] = geometry.build_covariance(pred1_lowres['scales'], pred1_lowres['rotations'])
+        pred2_lowres['covariances'] = geometry.build_covariance(pred2_lowres['scales'], pred2_lowres['rotations'])
 
         learn_residual = True
         if learn_residual:
@@ -106,13 +109,23 @@ class MAST3RGaussians(L.LightningModule):
             new_sh2[..., 0] = sh_utils.RGB2SH(einops.rearrange(view2['original_img'], 'b c h w -> b h w c'))
             pred1['sh'] = pred1['sh'] + new_sh1
             pred2['sh'] = pred2['sh'] + new_sh2
+           
+            sh1_downsampled = (new_sh1[:,::2,::2,:] + new_sh1[:,1::2,::2,:] + new_sh1[:,::2,1::2,:] + new_sh1[:,1::2,1::2,:])/ 4.0
+            sh2_downsampled = (new_sh2[:,::2,::2,:] + new_sh2[:,1::2,::2,:] + new_sh2[:,::2,1::2,:] + new_sh2[:,1::2,1::2,:])/ 4.0
+            pred1_lowres['sh'] = sh1_downsampled
+            pred2_lowres['sh'] = sh2_downsampled
 
         print(f"max sh1: {pred1['sh'].max()}, min sh1: {pred1['sh'].min()}")
+        means1 = pred1['means']
+        means2 = pred2['means']
+        print(f"means1 shape = {means1.shape}, means2 shape = {means2.shape}")
+        pred1_lowres['means'] = (means1[:,::2,::2,:] + means1[:,1::2,::2,:] + means1[:,::2,1::2,:] + means1[:,1::2,1::2,:]) / 4.0
+        pred2_lowres['means_in_other_view'] = (means2[:,::2,::2,:] + means2[:,1::2,::2,:] + means2[:,::2,1::2,:] + means2[:,1::2,1::2,:]) / 4.0
         # Update the keys to make clear that pts3d and means are in view1's frame
         pred2['pts3d_in_other_view'] = pred2.pop('pts3d')
         pred2['means_in_other_view'] = pred2.pop('means')
 
-        return pred1, pred2
+        return pred1, pred2, pred1_lowres, pred2_lowres
 
     def training_step(self, batch, batch_idx):
 

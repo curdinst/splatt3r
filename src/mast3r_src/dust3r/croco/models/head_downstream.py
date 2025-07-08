@@ -53,6 +53,6 @@ class PixelwiseTaskWithDPT(nn.Module):
 
 
     def forward(self, x, img_info):
-        out = self.dpt(x, image_size=(img_info['height'],img_info['width']))
+        out, out_2 = self.dpt(x, image_size=(img_info['height'],img_info['width']))
         if self.postprocess: out = self.postprocess(out)
         return out

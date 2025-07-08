@@ -1,3 +1,5 @@
 pretrained/
 *.pyc
 assets/
+logs/
+__pycache__/

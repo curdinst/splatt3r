@@ -71,7 +71,7 @@ class Cat_MLP_LocalFeatures_DPT_Pts3d(PixelwiseTaskWithDPT):
 
     def forward(self, decout, img_shape):
         # pass through the heads
-        pts3d = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        pts3d, pts3d_lowres = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
 
         # recover encoder and decoder outputs
         enc_output, dec_output = decout[0], decout[-1]
@@ -213,6 +213,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
             # Spherical Harmonics (3 * sh_degree) +
             # Opacity (1)
         gaussian_num_channels = 3 + 3 + 4 + 3 * sh_degree + 1
+        print(f"PixelwiseTaskWithDPT: num_channels={gaussian_num_channels}, feature_dim={feature_dim}, last_dim={last_dim}, hooks_idx={hooks_idx},dim_tokens={dim_tokens}, depth_mode={depth_mode}, postprocess={postprocess}, conf_mode={conf_mode}, head_type={head_type}")
         self.gaussian_dpt = PixelwiseTaskWithDPT(
             num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
             dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type
@@ -244,7 +245,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
 
     def forward(self, decout, img_shape):
         # pass through the heads
-        pts3d = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        pts3d, pts3d_lowres = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
 
         # recover encoder and decoder outputs
         enc_output, dec_output = decout[0], decout[-1]
@@ -258,13 +259,15 @@ class GaussianHead(PixelwiseTaskWithDPT):
         local_features = F.pixel_shuffle(local_features, self.patch_size)  # B,d,H,W
 
         # extract gaussian_features
-        gaussian_features = self.gaussian_dpt.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        gaussian_features, gaussian_features_lowres = self.gaussian_dpt.dpt(decout, image_size=(img_shape[0], img_shape[1]))
         # gaussian_features = self.gaussian_local_features(cat_output)  # B,S,D
         # gaussian_features = gaussian_features.transpose(-1, -2).view(B, -1, H // self.patch_size, W // self.patch_size)
         # gaussian_features = F.pixel_shuffle(gaussian_features, self.patch_size)  # B,d,H,W
 
         # post process 3D pts, descriptors and confidences
         out = torch.cat([pts3d, local_features, gaussian_features], dim=1)
+        print(f"local features shape {local_features.shape}, gaussian features shape {gaussian_features.shape}")
+        out_lowres = torch.cat([pts3d_lowres, torch.zeros_like(local_features[...,:256,:256]), gaussian_features_lowres], dim=1)
         if self.postprocess:
             out = gaussian_postprocess(out,
                                    depth_mode=self.depth_mode,
@@ -275,7 +278,16 @@ class GaussianHead(PixelwiseTaskWithDPT):
                                    desc_conf_mode=self.desc_conf_mode,
                                    use_offsets=self.use_offsets,
                                    sh_degree=self.sh_degree)
-        return out
+            out_lowres = gaussian_postprocess(out_lowres,
+                                   depth_mode=self.depth_mode,
+                                   conf_mode=self.conf_mode,
+                                   desc_dim=self.local_feat_dim,
+                                   desc_mode=self.desc_mode,
+                                   two_confs=self.two_confs,
+                                   desc_conf_mode=self.desc_conf_mode,
+                                   use_offsets=self.use_offsets,
+                                   sh_degree=self.sh_degree)
+        return out, out_lowres
 
 
 def mast3r_head_factory(head_type, output_mode, net, has_conf=False, use_offsets=False, sh_degree=1):

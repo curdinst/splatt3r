@@ -62,7 +62,11 @@ class DPTOutputAdapter_fix(DPTOutputAdapter):
         # Output head
         out = self.head(path_1)
 
-        return out
+        print(f"out shape: {out.shape}")
+
+        out_2 = self.head(path_2)
+        print(f"out_2 shape: {out_2.shape}")
+        return out, out_2
 
 
 class PixelwiseTaskWithDPT(nn.Module):
