@@ -56,9 +56,10 @@ if __name__ == '__main__':
     ios_mode = True
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # device = 'cpu'
-
+    
     model_name = "brandonsmart/splatt3r_v1.0"
-    filename = "epoch=19-step=1200.ckpt"
+    # filename = "epoch=19-step=1200.ckpt"
+    filename = "splatt3r_lowres.pth"
     # weights_path = hf_hub_download(repo_id=model_name, filename=filename)
     weights_path = "pretrained/" + filename
     model = main.MAST3RGaussians.load_from_checkpoint(weights_path, device)

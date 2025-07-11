@@ -192,7 +192,6 @@ class FeatureFusionBlock_custom(nn.Module):
             tensor: output
         """
         output = xs[0]
-
         if len(xs) == 2:
             res = self.resConfUnit1(xs[1])
             if self.width_ratio != 1:
@@ -215,6 +214,7 @@ class FeatureFusionBlock_custom(nn.Module):
             output = nn.functional.interpolate(output, scale_factor=2,
                     mode="bilinear", align_corners=self.align_corners)
         output = self.out_conv(output)
+
         return output
 
 def make_fusion_block(features, use_bn, width_ratio=1):
@@ -290,6 +290,7 @@ class DPTOutputAdapter(nn.Module):
                  dim_tokens_enc: Optional[int] = None,
                  head_type: str = 'regression',
                  output_width_ratio=1,
+                 lowres: bool = False,
                  **kwargs):
         super().__init__()
         self.num_channels = num_channels
@@ -313,12 +314,22 @@ class DPTOutputAdapter(nn.Module):
         self.scratch.refinenet3 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
         self.scratch.refinenet4 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
 
-        if self.head_type == 'regression':
+        if self.head_type == 'regression' and not lowres:
             # The "DPTDepthModel" head
             self.head = nn.Sequential(
                 nn.Conv2d(feature_dim, feature_dim // 2, kernel_size=3, stride=1, padding=1),
                 Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
                 nn.Conv2d(feature_dim // 2, last_dim, kernel_size=3, stride=1, padding=1),
+                nn.ReLU(True),
+                nn.Conv2d(last_dim, self.num_channels, kernel_size=1, stride=1, padding=0)
+            )
+        # @Added
+        elif self.head_type == 'regression' and lowres:
+            # The "DPTDepthModel" head
+            self.head = nn.Sequential(
+                nn.Conv2d(feature_dim, feature_dim // 2, kernel_size=3, stride=1, padding=1),
+                Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
+                nn.Conv2d(feature_dim // 2, last_dim, kernel_size=3, stride=2, padding=1), # Stride 2 here to get half resolution!
                 nn.ReLU(True),
                 nn.Conv2d(last_dim, self.num_channels, kernel_size=1, stride=1, padding=0)
             )

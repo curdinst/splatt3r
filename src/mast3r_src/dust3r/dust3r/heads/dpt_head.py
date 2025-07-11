@@ -73,7 +73,7 @@ class PixelwiseTaskWithDPT(nn.Module):
     """ DPT module for dust3r, can return 3D points + confidence for all pixels"""
 
     def __init__(self, *, n_cls_token=0, hooks_idx=None, dim_tokens=None,
-                 output_width_ratio=1, num_channels=1, postprocess=None, depth_mode=None, conf_mode=None, **kwargs):
+                 output_width_ratio=1, num_channels=1, postprocess=None, depth_mode=None, conf_mode=None, lowres=False, **kwargs):
         super(PixelwiseTaskWithDPT, self).__init__()
         self.return_all_layers = True  # backbone needs to return all layers
         self.postprocess = postprocess
@@ -82,7 +82,7 @@ class PixelwiseTaskWithDPT(nn.Module):
 
         assert n_cls_token == 0, "Not implemented"
         dpt_args = dict(output_width_ratio=output_width_ratio,
-                        num_channels=num_channels,
+                        num_channels=num_channels, lowres=lowres,
                         **kwargs)
         if hooks_idx is not None:
             dpt_args.update(hooks=hooks_idx)
@@ -92,6 +92,7 @@ class PixelwiseTaskWithDPT(nn.Module):
 
     def forward(self, x, img_info):
         out = self.dpt(x, image_size=(img_info[0], img_info[1]))
+        print(f"out type {type(out)}")
         if self.postprocess:
             out = self.postprocess(out, self.depth_mode, self.conf_mode)
         return out

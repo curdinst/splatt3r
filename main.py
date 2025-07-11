@@ -99,6 +99,14 @@ class MAST3RGaussians(L.LightningModule):
 
         pred1_lowres['covariances'] = geometry.build_covariance(pred1_lowres['scales'], pred1_lowres['rotations'])
         pred2_lowres['covariances'] = geometry.build_covariance(pred2_lowres['scales'], pred2_lowres['rotations'])
+        # print(f"pred1_lowres['covariances']: {pred1_lowres['covariances'].shape}")
+        # print(f"pred1_lowres['opacities']: {pred1_lowres['opacities'].shape}")
+        # pred1_lowres['covariances'] = pred1['covariances'][:,::2,::2,:]
+        # pred2_lowres['covariances'] = pred2['covariances'][:,::2,::2,:]
+        # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]
+        # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]
+
+
 
         learn_residual = True
         if learn_residual:
@@ -133,7 +141,7 @@ class MAST3RGaussians(L.LightningModule):
         view1, view2 = batch['context']
 
         # Predict using the encoder/decoder and calculate the loss
-        pred1, pred2 = self.forward(view1, view2)
+        pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
         color, _ = self.decoder(batch, pred1, pred2, (h, w))
 
         # Calculate losses

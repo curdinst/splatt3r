@@ -103,6 +103,11 @@ def save_as_ply(pred1, pred2, save_path):
     covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
     harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
     opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+    means = pred1["means"].unsqueeze(0)  # Remove the batch dimension
+    covariances = pred1["covariances"].unsqueeze(0)  # Remove the batch dimension
+    harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
+    opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
+
 
     # Rearrange the tensors to the correct shape
     means = einops.rearrange(means[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
