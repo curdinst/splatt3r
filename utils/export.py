@@ -54,7 +54,7 @@ class SaveBatchData(L.Callback):
         log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir)
 
 
-def save_as_ply(pred1, pred2, save_path):
+def save_as_ply(pred1, pred2, save_path, as_list=False):
     """Save the 3D Gaussians as a point cloud in the PLY format.
     Adapted loosely from PixelSplat"""
 
@@ -96,25 +96,32 @@ def save_as_ply(pred1, pred2, save_path):
         return quaternion, scale
 
     # Collect the Gaussian parameters
-    if "means_in_other_view" in pred2.keys():
-        means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
-    else:
-        means = torch.stack([pred1["means"], pred2["means"]], dim=1)
-    covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
-    harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
-    opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+    # if "means_in_other_view" in pred2.keys():
+    #     means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
+    # else:
+    #     means = torch.stack([pred1["means"], pred2["means"]], dim=1)
+    # covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
+    # harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
+    # opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+
     means = pred1["means"].unsqueeze(0)  # Remove the batch dimension
     covariances = pred1["covariances"].unsqueeze(0)  # Remove the batch dimension
     harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
     opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
 
 
-    # Rearrange the tensors to the correct shape
-    means = einops.rearrange(means[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
-    covariances = einops.rearrange(covariances[0], "v h w i j -> (v h w) i j")
-    harmonics = einops.rearrange(harmonics[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
-    opacities = einops.rearrange(opacities[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
-
+    if not as_list:
+        # Rearrange the tensors to the correct shape
+        means = einops.rearrange(means[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
+        covariances = einops.rearrange(covariances[0], "v h w i j -> (v h w) i j")
+        harmonics = einops.rearrange(harmonics[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
+        opacities = einops.rearrange(opacities[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
+    else:
+         # Rearrange the tensors to the correct shape
+        means = einops.rearrange(means[0], "view hw xyz -> (view hw) xyz").detach().cpu().numpy()
+        covariances = einops.rearrange(covariances[0], "v hw i j -> (v hw) i j")
+        harmonics = einops.rearrange(harmonics[0], "view hw xyz -> (view hw) xyz").detach().cpu().numpy()
+        opacities = einops.rearrange(opacities[0], "view hw xyz -> (view hw) xyz").detach().cpu().numpy()
     # Convert the covariance matrices to quaternions and scales
     rotations, scales = covariance_to_quaternion_and_scale(covariances)
 

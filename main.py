@@ -24,6 +24,7 @@ import utils.export as export
 import utils.geometry as geometry
 import utils.loss_mask as loss_mask
 import utils.sh_utils as sh_utils
+import utils.lod_utils as lod_utils
 import workspace
 
 
@@ -104,10 +105,8 @@ class MAST3RGaussians(L.LightningModule):
         # pred1_lowres['covariances'] = pred1['covariances'][:,::2,::2,:]
         # pred2_lowres['covariances'] = pred2['covariances'][:,::2,::2,:]
         # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]
-        # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]
-
-
-
+        # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]            
+        
         learn_residual = True
         if learn_residual:
             new_sh1 = torch.zeros_like(pred1['sh'])
@@ -128,12 +127,28 @@ class MAST3RGaussians(L.LightningModule):
         means2 = pred2['means']
         print(f"means1 shape = {means1.shape}, means2 shape = {means2.shape}")
         pred1_lowres['means'] = (means1[:,::2,::2,:] + means1[:,1::2,::2,:] + means1[:,::2,1::2,:] + means1[:,1::2,1::2,:]) / 4.0
+
+        use_lod = True
+        if use_lod:
+            print(f"view1['original_img'].shape = {view1['original_img'].shape}")
+            print(f"pred1['pts3d'].shape = {pred1['pts3d'].shape}")
+            H,W = view1['original_img'].shape[2:]
+            print(f"H,W = {H}, {W}")
+            confidence_threshold = 1.5
+            print(f"pred1.keys() = {pred1.keys()}")
+            valid = (pred1["conf"] > confidence_threshold)
+            device = "cuda:0"
+            th_rgb = 0.3
+            th_depth = 0.5
+            mask1_lowres, mask1 = lod_utils.get_mask(view1['original_img'].squeeze(0), pred1["pts3d"][...,-1].squeeze(0), valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+            mask2_lowres, mask2 = lod_utils.get_mask(view2['original_img'].squeeze(0), pred2["pts3d"][...,-1].squeeze(0), valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+            pred1_combined = lod_utils.apply_mask_to_gaussians(pred1, pred1_lowres, mask1, mask1_lowres)
+
         pred2_lowres['means_in_other_view'] = (means2[:,::2,::2,:] + means2[:,1::2,::2,:] + means2[:,::2,1::2,:] + means2[:,1::2,1::2,:]) / 4.0
         # Update the keys to make clear that pts3d and means are in view1's frame
         pred2['pts3d_in_other_view'] = pred2.pop('pts3d')
         pred2['means_in_other_view'] = pred2.pop('means')
-
-        return pred1, pred2, pred1_lowres, pred2_lowres
+        return pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined
 
     def training_step(self, batch, batch_idx):
 

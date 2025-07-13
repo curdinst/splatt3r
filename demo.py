@@ -40,10 +40,11 @@ def get_reconstructed_scene(outdir, model, device, silent, image_size, ios_mode,
 
     output = model(imgs[0], imgs[1])
 
-    pred1, pred2, pred1_lowres, pred2_lowres = output
+    pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined = output
     plyfile = os.path.join(outdir, 'gaussians.ply')
     export.save_as_ply(pred1, pred2, plyfile)
     export.save_as_ply(pred1_lowres, pred2_lowres, os.path.join(outdir, 'gaussians_lowres.ply'))
+    export.save_as_ply(pred1_combined, pred2,  os.path.join(outdir, 'gaussians1_combined.ply'), as_list=True)
     return plyfile
 
 if __name__ == '__main__':

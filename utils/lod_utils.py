@@ -54,6 +54,22 @@ def spatial_derivative(img, device="cuda:0"):
     return grad_x, grad_y
 
 def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
+    """
+    img (torch.Tensor): Image tensor of shape (C, H, W)
+    depth_img (torch.Tensor): Depth image tensor of shape (H, W)
+    valid (torch.Tensor): Validity mask tensor of shape (H*W,)
+    device (str): Device to perform computations on, e.g., "cuda:0" or "cpu"
+    H (int): Height of the image
+    W (int): Width of the image
+    th_rgb (float): Threshold for RGB gradients
+    th_depth (float): Threshold for depth gradients    
+
+
+    Returns:
+        mask_upsampled Bool tensor of shape (H, W) indicating valid pixels with original resolution
+        mask_downsampled Bool tensor of shape (H//2, W//2) indicating valid pixels with downsampled resolution
+    """
+
     grad_x, grad_y = spatial_derivative(img, device)
     grad_x, grad_y = torch.abs(grad_x), torch.abs(grad_y)
     # print(grad_x.shape, grad_y.shape)
@@ -75,19 +91,56 @@ def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
     depth_mask_y = depth_grad_y.squeeze(0) < th_depth
     # print(f"mask_x shape: {mask_x.shape}, mask_y shape: {mask_y.shape}")
     # print(f"depth_mask_x shape: {depth_mask_x.shape}, depth_mask_y shape: {depth_mask_y.shape}")
-    valid_rearranged = einops.rearrange(valid, "(h w) -> h w", h=H, w=W)
+    if len(valid.shape) == 1:
+        valid_rearranged = einops.rearrange(valid, "(h w) -> h w", h=H, w=W)
+    else:
+        valid_rearranged = valid
     mask = mask_x & mask_y & depth_mask_x & depth_mask_y & valid_rearranged
     # print("Mask shape:", mask.shape)
     print(f"mask.sum(): {mask.sum()}, mask.numel(): {mask.numel()}, mask.sum()/mask.numel(): {mask.sum()/mask.numel()}")
+    print(H,W, "Downsampled mask shape:", mask.shape)
 
-    H_mask, W_mask = mask.shape[0] // 2, mask.shape[1] // 2
-    mask_downsampled = F.upsample(mask.float().unsqueeze(0).unsqueeze(0), size=(H_mask,W_mask), mode="bilinear")
+    H_mask, W_mask = H // 2, W // 2
+    # mask_downsampled = F.upsample(mask.float().unsqueeze(0), size=(H_mask,W_mask), mode="bilinear")
+    mask_downsampled = F.interpolate(mask.unsqueeze(0).float(), size=(H_mask, W_mask), mode="bilinear").squeeze(0)
     # print("Downsampled mask shape:", mask_downsampled.shape)
     mask_downsampled = (mask_downsampled > 0.9)
     # print("Downsampled mask sum:", mask_downsampled.sum(), "numel:", mask_downsampled.numel(), "ratio:", mask_downsampled.sum()/mask_downsampled.numel())
-    mask_upsampled = F.interpolate(mask_downsampled.float(), size=(H, W), mode="nearest").squeeze(0).squeeze(0).bool()
+    mask_upsampled = F.interpolate(mask_downsampled.float().unsqueeze(0), size=(H, W), mode="nearest").squeeze(0).squeeze(0).bool()
     # print("Upsampled mask shape:", mask_upsampled.shape)
-    return mask_downsampled.squeeze(0).squeeze(0), mask_upsampled
+    return mask_downsampled.squeeze(0).squeeze(0), ~mask_upsampled
+
+def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
+    """
+    Apply a mask to the predicted Gaussian parameters.
+
+    Args:
+        pred (dict): containing Gaussian parameters, 
+        pts3d, ([1, 512, 512, 3])
+        conf, ([1, 512, 512])
+        desc, ([1, 512, 512, 24])
+        desc_conf, ([1, 512, 512])
+        scales, ([1, 512, 512, 3])
+        rotations, ([1, 512, 512, 4])
+        sh, ([1, 512, 512, 3, 1])
+        opacities, ([1, 512, 512, 1])
+        means, ([1, 512, 512, 3])
+        covariances, ([1, 512, 512, 3, 3])
+        (torch.Tensor): Mask tensor of shape (H, W).
+
+    Returns:
+        tuple: pred_combined containging ombined Gaussians
+    """
+
+    pred_combined = {}
+    for key in pred.keys():
+        if key not in ["means", "opacities", "sh", "rotations", "scales", "covariances"]:
+            continue
+        print(f"key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
+        pred_combined[key] = torch.cat([pred[key][:,mask,...], pred_lowres[key][:,mask_lowres,:]], dim=1)
+    
+    return pred_combined
+
 
 def fuse_gaussians(gaussians_in, valid, img, depth, img_size, config, device):
     (H, W) = img_size
