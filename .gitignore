@@ -3,4 +3,7 @@ pretrained/
 assets/
 logs/
 dataset/
+data/scannetpp/*json
+data/scannetpp/coverage*
+results/
 __pycache__/

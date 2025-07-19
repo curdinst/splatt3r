@@ -95,6 +95,7 @@ def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
         valid_rearranged = einops.rearrange(valid, "(h w) -> h w", h=H, w=W)
     else:
         valid_rearranged = valid
+    print(f"valid_rearranged shape: {valid_rearranged.shape}")
     mask = mask_x & mask_y & depth_mask_x & depth_mask_y & valid_rearranged
     # print("Mask shape:", mask.shape)
     print(f"mask.sum(): {mask.sum()}, mask.numel(): {mask.numel()}, mask.sum()/mask.numel(): {mask.sum()/mask.numel()}")
@@ -102,13 +103,13 @@ def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
 
     H_mask, W_mask = H // 2, W // 2
     # mask_downsampled = F.upsample(mask.float().unsqueeze(0), size=(H_mask,W_mask), mode="bilinear")
-    mask_downsampled = F.interpolate(mask.unsqueeze(0).float(), size=(H_mask, W_mask), mode="bilinear").squeeze(0)
+    mask_downsampled = F.interpolate(mask.unsqueeze(0).unsqueeze(0).float(), size=(H_mask, W_mask), mode="bilinear")
     # print("Downsampled mask shape:", mask_downsampled.shape)
     mask_downsampled = (mask_downsampled > 0.9)
     # print("Downsampled mask sum:", mask_downsampled.sum(), "numel:", mask_downsampled.numel(), "ratio:", mask_downsampled.sum()/mask_downsampled.numel())
-    mask_upsampled = F.interpolate(mask_downsampled.float().unsqueeze(0), size=(H, W), mode="nearest").squeeze(0).squeeze(0).bool()
-    # print("Upsampled mask shape:", mask_upsampled.shape)
-    return mask_downsampled.squeeze(0).squeeze(0), ~mask_upsampled
+    mask_upsampled = F.interpolate(mask_downsampled.float(), size=(H, W), mode="nearest").squeeze(0).squeeze(0).bool()
+    print("mask_downsampled.shape :", mask_downsampled.shape, "mask_upsampled.shape:", mask_upsampled.shape)
+    return mask_downsampled.squeeze(0).squeeze(0), ~mask_upsampled.squeeze(0).squeeze(0)  # Returns (H//2, W//2) and (H, W) masks
 
 def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
     """
@@ -116,17 +117,17 @@ def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
 
     Args:
         pred (dict): containing Gaussian parameters, 
-        pts3d, ([1, 512, 512, 3])
-        conf, ([1, 512, 512])
-        desc, ([1, 512, 512, 24])
-        desc_conf, ([1, 512, 512])
-        scales, ([1, 512, 512, 3])
-        rotations, ([1, 512, 512, 4])
-        sh, ([1, 512, 512, 3, 1])
-        opacities, ([1, 512, 512, 1])
-        means, ([1, 512, 512, 3])
-        covariances, ([1, 512, 512, 3, 3])
-        (torch.Tensor): Mask tensor of shape (H, W).
+        pts3d, ([b, 512, 512, 3])
+        conf, ([b, 512, 512])
+        desc, ([b, 512, 512, 24])
+        desc_conf, ([b, 512, 512])
+        scales, ([b, 512, 512, 3])
+        rotations, ([b, 512, 512, 4])
+        sh, ([b, 512, 512, 3, 1])
+        opacities, ([b, 512, 512, 1])
+        means, ([b, 512, 512, 3])
+        covariances, ([b, 512, 512, 3, 3])
+        (torch.Tensor): Mask tensor of shape (b, H, W).
 
     Returns:
         tuple: pred_combined containging ombined Gaussians
@@ -136,9 +137,22 @@ def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
     for key in pred.keys():
         if key not in ["means", "opacities", "sh", "rotations", "scales", "covariances"]:
             continue
-        print(f"key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
-        pred_combined[key] = torch.cat([pred[key][:,mask,...], pred_lowres[key][:,mask_lowres,:]], dim=1)
-    
+        print(f"pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
+        print(f"mask shape: {mask.shape}, mask_lowres shape: {mask_lowres.shape}")
+        # pred_key = einops.rearrange(pred[key], "b h w ... -> b (h w) ...")
+        # pred_lowres_key = einops.rearrange(pred_lowres[key], "b h w ... -> b (h w) ...")
+        # mask = einops.rearrange(mask, "b h w -> b (h w)")
+        # mask_lowres = einops.rearrange(mask_lowres, "b h w -> b (h w)")
+        # pred_masked = torch.index_select(pred_key, 1, mask)
+        # pred_lowres_masked = torch.index_select(pred_lowres_key, 1, mask_lowres)
+        # print(f"pred_masked.shape: {pred_masked.shape}, pred_lowres_masked.shape: {pred_lowres_masked.shape}")
+        # pred_combined[key] = torch.cat([pred[key][mask,...], pred_lowres[key][mask_lowres,...]], dim=1)
+        # print(pred_combined[key].shape, "for key:", key)
+        tensor_list = []
+        for b in range(pred["means"].shape[0]):
+            print(f"key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
+            tensor_list.append(torch.cat([pred[key][b,mask[b,...],...], pred_lowres[key][b,mask_lowres[b,...],:]], dim=0))
+        pred_combined[key] = torch.stack(tensor_list, dim=0)
     return pred_combined
 
 

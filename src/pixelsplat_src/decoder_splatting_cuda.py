@@ -3,6 +3,8 @@ from einops import rearrange, repeat
 
 from .cuda_splatting import render_cuda
 from utils.geometry import normalize_intrinsics
+import os
+from torchvision.utils import save_image
 
 
 class DecoderSplattingCUDA(torch.nn.Module):
@@ -15,7 +17,7 @@ class DecoderSplattingCUDA(torch.nn.Module):
             persistent=False,
         )
     
-    def forward(self, batch, pred1, pred2, image_shape):
+    def forward(self, batch, pred1, pred2, image_shape, single_map=False):
 
         base_pose = batch['context'][0]['camera_pose'] # [b, 4, 4]
         inv_base_pose = torch.inverse(base_pose)
@@ -28,10 +30,16 @@ class DecoderSplattingCUDA(torch.nn.Module):
         # --i.e. in the coordinate system of the first context view, normalized by the scene scale
         extrinsics = inv_base_pose[:, None, :, :] @ extrinsics
 
-        means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
-        covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
-        harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)
-        opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+        if not single_map:
+            means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
+            covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
+            harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)
+            opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+        else:
+            means = pred1["means"]
+            covariances = pred1["covariances"]
+            harmonics = pred1["sh"]
+            opacities = pred1["opacities"]
 
         b, v, _, _ = extrinsics.shape
         near = torch.full((b, v), 0.1, device=means.device)
@@ -49,5 +57,17 @@ class DecoderSplattingCUDA(torch.nn.Module):
             repeat(rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh"), "b g c d_sh -> (b v) g c d_sh", v=v),
             repeat(rearrange(opacities, "b v h w 1 -> b (v h w)"), "b g -> (b v) g", v=v),
         )
+        print(f"color.min: {color.min()}, color.max: {color.max()}")
+        output_dir = "/home/curdinst/repos/splatt3r/results"
+        os.makedirs(output_dir, exist_ok=True)
+
         color = rearrange(color, "(b v) c h w -> b v c h w", b=b, v=v)
+        print(f"color.shape: {color.shape}")
+        for i in range(color.shape[0]):  # Iterate over batch
+            for j in range(color.shape[1]):  # Iterate over views
+                # image = rearrange(color[i, j,...], "c h w -> h w c")  # [c, h, w]
+                image = color[i, j, ...]  # [c, h, w]
+                print(f"image.shape: {image.shape}")
+                save_path = os.path.join(output_dir, f"image_batch_{i}_view_{j}.png")
+                save_image(image*256, save_path)
         return color, None

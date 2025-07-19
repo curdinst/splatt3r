@@ -103,6 +103,7 @@ def render_cuda(
             scale_modifier=1.0,
             viewmatrix=view_matrix[i],
             projmatrix=full_projection[i],
+            projmatrix_raw=projection_matrix[i],
             sh_degree=degree,
             campos=extrinsics[i, :3, 3],
             prefiltered=False,  # This matches the original usage.
@@ -112,7 +113,7 @@ def render_cuda(
 
         row, col = torch.triu_indices(3, 3)
 
-        image, radii = rasterizer(
+        output = rasterizer(
             means3D=gaussian_means[i],
             means2D=mean_gradients,
             shs=shs[i] if use_sh else None,
@@ -120,6 +121,8 @@ def render_cuda(
             opacities=gaussian_opacities[i, ..., None],
             cov3D_precomp=gaussian_covariances[i, :, row, col],
         )
+        # print("output", output)
+        (image, radii, _, _, _) = output
         all_images.append(image)
         all_radii.append(radii)
     return torch.stack(all_images)

@@ -111,7 +111,11 @@ class DUST3RSplattingDataset(torch.utils.data.Dataset):
         for frame in range(len(self.data.color_paths[sequence])):
             if frame == first_context_view:
                 continue
-            overlap = self.coverage[sequence][first_context_view][frame]
+            try:
+                overlap = self.coverage[sequence][first_context_view][frame]
+            except:
+                print(f"Coverage data missing for sequence {sequence}, frame {first_context_view} to {frame}.")
+                continue
             if overlap > context_overlap_threshold:
                 valid_second_context_views.append(frame)
         if len(valid_second_context_views) > 0:
@@ -124,7 +128,11 @@ class DUST3RSplattingDataset(torch.utils.data.Dataset):
             for frame in range(len(self.data.color_paths[sequence])):
                 if frame == first_context_view:
                     continue
-                overlap = self.coverage[sequence][first_context_view][frame]
+                try:
+                    overlap = self.coverage[sequence][first_context_view][frame]
+                except:
+                    print(f"Coverage data missing for sequence {sequence}, frame {first_context_view} to {frame}.")
+                    continue
                 if best_view is None or overlap > best_overlap:
                     best_view = frame
                     best_overlap = overlap
@@ -135,10 +143,14 @@ class DUST3RSplattingDataset(torch.utils.data.Dataset):
         for frame in range(len(self.data.color_paths[sequence])):
             if frame == first_context_view or frame == second_context_view:
                 continue
-            overlap_max = max(
-                self.coverage[sequence][first_context_view][frame],
-                self.coverage[sequence][second_context_view][frame]
-            )
+            try:
+                overlap_max = max(
+                    self.coverage[sequence][first_context_view][frame],
+                    self.coverage[sequence][second_context_view][frame]
+                )
+            except:
+                print(f"Coverage data missing for sequence {sequence}, frame {first_context_view} to {frame}.")
+                continue
             if overlap_max > target_overlap_threshold:
                 valid_target_views.append(frame)
         if len(valid_target_views) >= num_target_views:
@@ -150,10 +162,13 @@ class DUST3RSplattingDataset(torch.utils.data.Dataset):
             for frame in range(len(self.data.color_paths[sequence])):
                 if frame == first_context_view or frame == second_context_view:
                     continue
-                overlap = max(
-                    self.coverage[sequence][first_context_view][frame],
-                    self.coverage[sequence][second_context_view][frame]
-                )
+                try:
+                    overlap = max(
+                        self.coverage[sequence][first_context_view][frame],
+                        self.coverage[sequence][second_context_view][frame]
+                    )
+                except:
+                    continue
                 overlaps.append((frame, overlap))
             overlaps.sort(key=lambda x: x[1], reverse=True)
             target_views = [frame for frame, _ in overlaps[:num_target_views]]

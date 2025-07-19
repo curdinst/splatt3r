@@ -42,7 +42,7 @@ class SaveBatchData(L.Callback):
         # Run the batch through the model again
         _, _, h, w = batch["context"][0]["img"].shape
         view1, view2 = batch['context']
-        pred1, pred2 = pl_module.forward(view1, view2)
+        pred1, pred2, pred1_lowres, pred2_lowres = pl_module.forward(view1, view2)
         color, depth = pl_module.decoder(batch, pred1, pred2, (h, w))
         mask = loss_mask.calculate_loss_mask(batch)
 

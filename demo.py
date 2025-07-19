@@ -39,12 +39,14 @@ def get_reconstructed_scene(outdir, model, device, silent, image_size, ios_mode,
         img['true_shape'] = torch.from_numpy(img['true_shape'])
 
     output = model(imgs[0], imgs[1])
-
-    pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined = output
+    if len(output) == 5:
+        pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined = output
+        export.save_as_ply(pred1_combined, pred2,  os.path.join(outdir, 'gaussians1_combined.ply'), as_list=True)
+    else:
+        pred1, pred2, pred1_lowres, pred2_lowres = output
     plyfile = os.path.join(outdir, 'gaussians.ply')
     export.save_as_ply(pred1, pred2, plyfile)
     export.save_as_ply(pred1_lowres, pred2_lowres, os.path.join(outdir, 'gaussians_lowres.ply'))
-    export.save_as_ply(pred1_combined, pred2,  os.path.join(outdir, 'gaussians1_combined.ply'), as_list=True)
     return plyfile
 
 if __name__ == '__main__':
@@ -60,7 +62,7 @@ if __name__ == '__main__':
     
     model_name = "brandonsmart/splatt3r_v1.0"
     # filename = "epoch=19-step=1200.ckpt"
-    filename = "splatt3r_lowres.pth"
+    filename = "splatt3r_coarse.pth"
     # weights_path = hf_hub_download(repo_id=model_name, filename=filename)
     weights_path = "pretrained/" + filename
     model = main.MAST3RGaussians.load_from_checkpoint(weights_path, device)

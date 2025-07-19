@@ -122,14 +122,13 @@ class MAST3RGaussians(L.LightningModule):
             pred1_lowres['sh'] = sh1_downsampled
             pred2_lowres['sh'] = sh2_downsampled
 
-        # print(f"max sh1: {pred1['sh'].max()}, min sh1: {pred1['sh'].min()}")
+        print(f"max sh1: {pred1['sh'].max()}, min sh1: {pred1['sh'].min()}")
         means1 = pred1['means']
         means2 = pred2['means']
-        # print(f"means1 shape = {means1.shape}, means2 shape = {means2.shape}")
+        print(f"means1 shape = {means1.shape}, means2 shape = {means2.shape}")
         pred1_lowres['means'] = (means1[:,::2,::2,:] + means1[:,1::2,::2,:] + means1[:,::2,1::2,:] + means1[:,1::2,1::2,:]) / 4.0
-        pred2_lowres['means_in_other_view'] = (means2[:,::2,::2,:] + means2[:,1::2,::2,:] + means2[:,::2,1::2,:] + means2[:,1::2,1::2,:]) / 4.0
 
-        use_lod = False
+        use_lod = True
         if use_lod:
             print(f"view1['original_img'].shape = {view1['original_img'].shape}")
             print(f"pred1['pts3d'].shape = {pred1['pts3d'].shape}")
@@ -138,49 +137,28 @@ class MAST3RGaussians(L.LightningModule):
             confidence_threshold = 1.5
             print(f"pred1.keys() = {pred1.keys()}")
             valid = (pred1["conf"] > confidence_threshold)
-            valid2 = (pred2["conf"] > confidence_threshold)
             device = "cuda:0"
             th_rgb = 0.3
             th_depth = 0.5
-            mask1_lowres = torch.zeros((pred1["pts3d"].shape[0], H//2, W//2), dtype=torch.bool, device=device)
-            mask2_lowres = torch.zeros((pred2["pts3d"].shape[0], H//2, W//2), dtype=torch.bool, device=device)
-            mask1 = torch.zeros((pred1["pts3d"].shape[0], H, W), dtype=torch.bool, device=device)
-            mask2 = torch.zeros((pred2["pts3d"].shape[0], H, W), dtype=torch.bool, device=device)
-            for b in range(pred1["pts3d"].shape[0]):
-                print(f"batch {b}, pred1['pts3d'].shape = {pred1['pts3d'].shape}, pred1['means'].shape = {pred1['means'].shape} valid.shape = {valid.shape}")
-                mask1_lowres[b, ...], mask1[b, ...] =  lod_utils.get_mask(view1['original_img'][b, ...], pred1["pts3d"][b, ..., -1], valid[b, ...], device, H, W, th_depth=th_depth, th_rgb=th_rgb)
-                
-                # print(f"mask1_lowres.shape = {mask1_lowres.shape}, mask1.shape = {mask1.shape}")
-                # print(f"mask1_lowres[b, ...].shape = {mask1_lowres[b, ...].shape}, mask1[b, ...].shape = {mask1[b, ...].shape}")
-
-                mask2_lowres[b, ...] , mask2[b, ...] =  lod_utils.get_mask(view2['original_img'][b, ...], pred2["pts3d"][b, ..., -1], valid2[b, ...], device, H, W, th_depth=th_depth, th_rgb=th_rgb)
-                
-                # mask1_lowres[b, ...], mask1[b, ...] = lod_utils.get_mask(view1['original_img'][b, ...], pred1["pts3d"][b, ..., -1], valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
-                # mask2_lowres[b, ...], mask2[b, ...] = lod_utils.get_mask(view2['original_img'][b, ...], pred2["pts3d"][...,-1][b, ...], valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+            mask1_lowres, mask1 = lod_utils.get_mask(view1['original_img'].squeeze(0), pred1["pts3d"][...,-1].squeeze(0), valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+            mask2_lowres, mask2 = lod_utils.get_mask(view2['original_img'].squeeze(0), pred2["pts3d"][...,-1].squeeze(0), valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
             pred1_combined = lod_utils.apply_mask_to_gaussians(pred1, pred1_lowres, mask1, mask1_lowres)
-            pred2_combined = lod_utils.apply_mask_to_gaussians(pred2, pred2_lowres, mask2, mask2_lowres)
+
+        pred2_lowres['means_in_other_view'] = (means2[:,::2,::2,:] + means2[:,1::2,::2,:] + means2[:,::2,1::2,:] + means2[:,1::2,1::2,:]) / 4.0
         # Update the keys to make clear that pts3d and means are in view1's frame
         pred2['pts3d_in_other_view'] = pred2.pop('pts3d')
         pred2['means_in_other_view'] = pred2.pop('means')
-        if use_lod:
-            return pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined, pred2_combined
-        else:
-            return pred1, pred2, pred1_lowres, pred2_lowres
-        
+        return pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined
 
     def training_step(self, batch, batch_idx):
-        # print(f"Training step {batch_idx}, batch size: {len(batch['context'])}")
+
         _, _, h, w = batch["context"][0]["img"].shape
         view1, view2 = batch['context']
 
         # Predict using the encoder/decoder and calculate the loss
         pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
-        if config.train_coarse:
-            print(f"Train Coarse")
-            color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
-        else:
-            color, _ = self.decoder(batch, pred1, pred2, (h, w))
-        
+        color, _ = self.decoder(batch, pred1, pred2, (h, w))
+
         # Calculate losses
         mask = loss_mask.calculate_loss_mask(batch)
         loss, mse, lpips = self.calculate_loss(
@@ -200,11 +178,8 @@ class MAST3RGaussians(L.LightningModule):
         view1, view2 = batch['context']
 
         # Predict using the encoder/decoder and calculate the loss
-        pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
-        if config.train_coarse:
-            color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
-        else:
-            color, _ = self.decoder(batch, pred1, pred2, (h, w))
+        pred1, pred2 = self.forward(view1, view2)
+        color, _ = self.decoder(batch, pred1, pred2, (h, w))
 
         # Calculate losses
         mask = loss_mask.calculate_loss_mask(batch)
@@ -227,12 +202,9 @@ class MAST3RGaussians(L.LightningModule):
 
         # Predict using the encoder/decoder and calculate the loss
         with self.benchmarker.time("encoder"):
-            pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
+            pred1, pred2 = self.forward(view1, view2)
         with self.benchmarker.time("decoder", num_calls=num_targets):
-            if config.train_coarse:
-                color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
-            else:
-                color, _ = self.decoder(batch, pred1, pred2, (h, w))
+            color, _ = self.decoder(batch, pred1, pred2, (h, w))
 
         # Calculate losses
         mask = loss_mask.calculate_loss_mask(batch)
@@ -429,6 +401,7 @@ def run_experiment(config):
         profiler=profiler,
         strategy="ddp_find_unused_parameters_true" if len(config.devices) > 1 else "auto",
     )
+    print(f"Trainer initialized with devices: {config.devices}")
     trainer.fit(model, train_dataloaders=data_loader_train, val_dataloaders=data_loader_val)
 
     # Testing

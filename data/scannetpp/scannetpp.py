@@ -30,10 +30,10 @@ class ScanNetPPData():
 
         # Fetch the sequences to use
         if stage == "train":
-            sequence_file = os.path.join(self.root, "raw", "splits", "nvs_sem_train.txt")
+            sequence_file = os.path.join(self.root, "splits", "nvs_sem_train.txt")
             bad_scenes = ['303745abc7']
         elif stage == "val" or stage == "test":
-            sequence_file = os.path.join(self.root, "raw", "splits", "nvs_sem_val.txt")
+            sequence_file = os.path.join(self.root, "splits", "nvs_sem_val.txt")
             bad_scenes = ['cc5237fd77']
         with open(sequence_file, "r") as f:
             self.sequences = f.read().splitlines()
@@ -41,7 +41,7 @@ class ScanNetPPData():
         # Remove scenes that have frames with no valid depths
         logger.info(f"Removing scenes that have frames with no valid depths: {bad_scenes}")
         self.sequences = [s for s in self.sequences if s not in bad_scenes]
-
+        print(f"self.sequences: {self.sequences}")
         P = np.array([
             [1, 0, 0, 0],
             [0, -1, 0, 0],
@@ -53,8 +53,8 @@ class ScanNetPPData():
         scenes_with_no_good_frames = []
         for sequence in self.sequences:
 
-            input_raw_folder = os.path.join(self.root, 'raw', 'data', sequence)
-            input_processed_folder = os.path.join(self.root, 'processed', sequence)
+            input_raw_folder = os.path.join(self.root, 'data', sequence)
+            input_processed_folder = os.path.join(self.root, 'data', sequence)
 
             # Load Train & Test Splits
             frame_file = os.path.join(input_raw_folder, "dslr", "train_test_lists.json")
@@ -153,14 +153,18 @@ class ScanNetPPData():
 
 
 def get_scannet_dataset(root, stage, resolution, num_epochs_per_epoch=1):
-
+    print(f"Rsesolution: {resolution}")
     data = ScanNetPPData(root, stage)
 
     coverage = {}
     for sequence in data.sequences:
-        with open(f'./data/scannetpp/coverage/{sequence}.json', 'r') as f:
-            sequence_coverage = json.load(f)
-        coverage[sequence] = sequence_coverage[sequence]
+        try:
+            with open(f'./data/scannetpp/coverage/{sequence}.json', 'r') as f:
+                sequence_coverage = json.load(f)
+            coverage[sequence] = sequence_coverage[sequence]
+        except FileNotFoundError:
+            print(f"Coverage file for sequence {sequence} not found. Using empty coverage.")
+            coverage[sequence] = {}
 
     dataset = DUST3RSplattingDataset(
         data,

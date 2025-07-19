@@ -300,7 +300,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
 
         # post process 3D pts, descriptors and confidences
         out = torch.cat([pts3d, local_features, gaussian_features], dim=1)
-        print(f"local features shape {local_features.shape}, gaussian features shape {gaussian_features.shape}")
+        # print(f"local features shape {local_features.shape}, gaussian features shape {gaussian_features.shape}")
         out_lowres = torch.cat([pts3d_lowres, torch.zeros_like(local_features[...,:256,:256]), gaussian_features_lowres], dim=1)
         if self.postprocess:
             out = gaussian_postprocess(out,
