@@ -30,10 +30,10 @@ class ScanNetPPData():
 
         # Fetch the sequences to use
         if stage == "train":
-            sequence_file = os.path.join(self.root, "raw", "splits", "nvs_sem_train.txt")
+            sequence_file = os.path.join(self.root, "splits", "nvs_sem_train.txt")
             bad_scenes = ['303745abc7']
         elif stage == "val" or stage == "test":
-            sequence_file = os.path.join(self.root, "raw", "splits", "nvs_sem_val.txt")
+            sequence_file = os.path.join(self.root, "splits", "nvs_sem_val.txt")
             bad_scenes = ['cc5237fd77']
         with open(sequence_file, "r") as f:
             self.sequences = f.read().splitlines()
@@ -53,8 +53,8 @@ class ScanNetPPData():
         scenes_with_no_good_frames = []
         for sequence in self.sequences:
 
-            input_raw_folder = os.path.join(self.root, 'raw', 'data', sequence)
-            input_processed_folder = os.path.join(self.root, 'processed', sequence)
+            input_raw_folder = os.path.join(self.root, 'data', sequence)
+            input_processed_folder = os.path.join(self.root, 'data', sequence)
 
             # Load Train & Test Splits
             frame_file = os.path.join(input_raw_folder, "dslr", "train_test_lists.json")

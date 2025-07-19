@@ -25,6 +25,8 @@ import utils.geometry as geometry
 import utils.loss_mask as loss_mask
 import utils.sh_utils as sh_utils
 import workspace
+import torchvision
+import cv2 as cv
 
 
 class MAST3RGaussians(L.LightningModule):
@@ -119,8 +121,19 @@ class MAST3RGaussians(L.LightningModule):
         _, _, h, w = batch["context"][0]["img"].shape
         view1, view2 = batch['context']
 
+        # Save view1 and view2 as images
+        os.makedirs("./results/images", exist_ok=True)
+        view1_img = einops.rearrange(view1['original_img'], 'b c h w -> b h w c').cpu().numpy()
+        view2_img = einops.rearrange(view2['original_img'], 'b c h w -> b h w c').cpu().numpy()
+        for i, img in enumerate(view1_img):
+            cv.imwrite(f"./results/images/view1_{batch_idx}_{i}.jpg", img * 255)
+        for i, img in enumerate(view2_img):
+            cv.imwrite(f"./results/images/view2_{batch_idx}_{i}.jpg", img * 255)
+        
         # Predict using the encoder/decoder and calculate the loss
         pred1, pred2 = self.forward(view1, view2)
+
+        export.save_as_ply(pred1, pred2, "./results/predicted_training_gaussians.ply")
         color, _ = self.decoder(batch, pred1, pred2, (h, w))
 
         # Calculate losses
@@ -312,9 +325,11 @@ def run_experiment(config):
     print('Loading Model')
     model = MAST3RGaussians(config)
     if config.use_pretrained:
-        ckpt = torch.load(config.pretrained_mast3r_path)
-        _ = model.encoder.load_state_dict(ckpt['model'], strict=False)
-        del ckpt
+        # ckpt = torch.load(config.pretrained_mast3r_path)
+        # _ = model.encoder.load_state_dict(ckpt['state_dict'], strict=False)
+        model = MAST3RGaussians.load_from_checkpoint(config.pretrained_mast3r_path, "cuda:0")
+
+        # del ckpt
 
     # Training Datasets
     print(f'Building Datasets')
@@ -366,6 +381,7 @@ def run_experiment(config):
     )
     trainer.fit(model, train_dataloaders=data_loader_train, val_dataloaders=data_loader_val)
 
+    print('Training finished')
     # Testing
     original_save_dir = config.save_dir
     results = {}
