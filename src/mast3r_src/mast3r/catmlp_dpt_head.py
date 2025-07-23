@@ -218,8 +218,6 @@ class GaussianHead(PixelwiseTaskWithDPT):
             num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
             dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, lowres=False
         )
-        for param in self.gaussian_dpt.parameters():
-            param.requires_grad = False
         
         # print(f"self.gaussian_dpt: {self.gaussian_dpt}")
         # print(f"self.gaussian_dpt.head: {self.gaussian_dpt.dpt.head}")

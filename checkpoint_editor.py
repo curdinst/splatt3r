@@ -55,6 +55,8 @@ for key in list(MASt3R_gaussians_v1_keys):
         print(key)
         key_modified = key.replace('gaussian_dpt', 'gaussian_dpt_lowres')
         splatt3r_lowres['state_dict'][key_modified] = MASt3R_gaussians_v1['state_dict'][key].clone()
+        splatt3r_lowres['state_dict'][key_modified].requires_grad = True
+        print(f"{key_modified} requires_grad: {splatt3r_lowres['state_dict'][key_modified].requires_grad}")
 
 torch.save(splatt3r_lowres, 'pretrained/splatt3r_coarse1.ckpt')
 #===================================================================================================================

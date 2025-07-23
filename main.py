@@ -61,8 +61,10 @@ class MAST3RGaussians(L.LightningModule):
             sh_degree=config.sh_degree if hasattr(config, 'sh_degree') else 1
         )
         self.encoder.requires_grad_(False)
-        self.encoder.downstream_head1.gaussian_dpt.dpt.requires_grad_(True)
-        self.encoder.downstream_head2.gaussian_dpt.dpt.requires_grad_(True)
+        self.encoder.downstream_head1.gaussian_dpt.dpt.requires_grad_(False)
+        self.encoder.downstream_head2.gaussian_dpt.dpt.requires_grad_(False)
+        self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.requires_grad_(True)
+        self.encoder.downstream_head2.gaussian_dpt_lowres.dpt.requires_grad_(True)
 
         # The decoder which we use to render the predicted Gaussians into
         # images, lightly modified from PixelSplat
@@ -112,7 +114,7 @@ class MAST3RGaussians(L.LightningModule):
         if learn_residual:
             new_sh1 = torch.zeros_like(pred1['sh'])
             new_sh2 = torch.zeros_like(pred2['sh'])
-            print(f"original image max: {view1['original_img'].max()}, min: {view1['original_img'].min()}")
+            # print(f"original image max: {view1['original_img'].max()}, min: {view1['original_img'].min()}")
             new_sh1[..., 0] = sh_utils.RGB2SH(einops.rearrange(view1['original_img'], 'b c h w -> b h w c'))
             new_sh2[..., 0] = sh_utils.RGB2SH(einops.rearrange(view2['original_img'], 'b c h w -> b h w c'))
             pred1['sh'] = pred1['sh'] + new_sh1
@@ -230,6 +232,7 @@ class MAST3RGaussians(L.LightningModule):
                 calculate_ssim=False
             )
 
+        print(f"Loss: {loss.item()}, MSE: {mse.item()}, LPIPS: {lpips.item()} ------------------------------------")
         # Log losses
         self.log_metrics('val', loss, mse, lpips)
         return loss
@@ -278,7 +281,7 @@ class MAST3RGaussians(L.LightningModule):
 
     def calculate_loss(self, batch, view1, view2, pred1, pred2, color, mask, apply_mask=True, average_over_mask=True, calculate_ssim=False):
 
-        print(f"len batch['target'] = {len(batch['target'])}")
+        # print(f"len batch['target'] = {len(batch['target'])}")
         target_color = torch.stack([target_view['original_img'] for target_view in batch['target']], dim=1)
         predicted_color = color
 
@@ -286,7 +289,7 @@ class MAST3RGaussians(L.LightningModule):
             assert mask.sum() > 0, "There are no valid pixels in the mask!"
             target_color = target_color * mask[..., None, :, :]
             predicted_color = predicted_color * mask[..., None, :, :]
-        print(f"target_color.shape: {target_color.shape}, predicted_color.shape: {predicted_color.shape}, mask.shape: {mask.shape}")
+        # print(f"target_color.shape: {target_color.shape}, predicted_color.shape: {predicted_color.shape}, mask.shape: {mask.shape}")
         flattened_color = einops.rearrange(predicted_color, 'b v c h w -> (b v) c h w')
         flattened_target_color = einops.rearrange(target_color, 'b v c h w -> (b v) c h w')
         flattened_mask = einops.rearrange(mask, 'b v h w -> (b v) h w')
@@ -298,7 +301,7 @@ class MAST3RGaussians(L.LightningModule):
         else:
             mse_loss = rgb_l2_loss.mean()
 
-        print(f"flattened_color.shape: {flattened_color.shape}, flattened_target_color.shape: {flattened_target_color.shape}")
+        # print(f"flattened_color.shape: {flattened_color.shape}, flattened_target_color.shape: {flattened_target_color.shape}")
         # LPIPS loss
         lpips_loss = self.lpips_criterion(flattened_target_color, flattened_color, normalize=True)
         if average_over_mask:

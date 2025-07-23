@@ -25,11 +25,11 @@ data:
   batch_size: 1
   num_workers: 4
   resolution: [512, 512]
-  epochs_per_train_epoch: 10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
+  epochs_per_train_epoch: 50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
 
 # Optimization
 opt:
-  epochs: 20 # 20
+  epochs: 5 # 20
   lr: 0.00001
   weight_decay: 0.05
   gradient_clip_val: 0.5
