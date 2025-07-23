@@ -17,11 +17,12 @@ class SaveBatchData(L.Callback):
     '''A Lightning callback that occasionally saves batch inputs and outputs to disk.
     It is not critical to the training process, and can be disabled if unwanted.'''
 
-    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100):
+    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True):
         self.save_dir = save_dir
         self.train_save_interval = train_save_interval
         self.val_save_interval = val_save_interval
         self.test_save_interval = test_save_interval
+        self.coarse = coarse
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx % self.train_save_interval == 0 and trainer.global_rank == 0:
@@ -43,6 +44,8 @@ class SaveBatchData(L.Callback):
         _, _, h, w = batch["context"][0]["img"].shape
         view1, view2 = batch['context']
         pred1, pred2, pred1_lowres, pred2_lowres = pl_module.forward(view1, view2)
+        if self.coarse:
+            pred1, pred2 = pred1_lowres, pred2_lowres
         color, depth = pl_module.decoder(batch, pred1, pred2, (h, w))
         mask = loss_mask.calculate_loss_mask(batch)
 

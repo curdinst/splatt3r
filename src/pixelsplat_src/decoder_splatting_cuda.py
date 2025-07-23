@@ -57,17 +57,17 @@ class DecoderSplattingCUDA(torch.nn.Module):
             repeat(rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh"), "b g c d_sh -> (b v) g c d_sh", v=v),
             repeat(rearrange(opacities, "b v h w 1 -> b (v h w)"), "b g -> (b v) g", v=v),
         )
-        print(f"color.min: {color.min()}, color.max: {color.max()}")
-        output_dir = "/home/curdinst/repos/splatt3r/results"
-        os.makedirs(output_dir, exist_ok=True)
+        # print(f"color.min: {color.min()}, color.max: {color.max()}")
+        # output_dir = "/home/curdinst/repos/splatt3r/results"
+        # os.makedirs(output_dir, exist_ok=True)
 
-        color = rearrange(color, "(b v) c h w -> b v c h w", b=b, v=v)
-        print(f"color.shape: {color.shape}")
-        for i in range(color.shape[0]):  # Iterate over batch
-            for j in range(color.shape[1]):  # Iterate over views
-                # image = rearrange(color[i, j,...], "c h w -> h w c")  # [c, h, w]
-                image = color[i, j, ...]  # [c, h, w]
-                print(f"image.shape: {image.shape}")
-                save_path = os.path.join(output_dir, f"image_batch_{i}_view_{j}.png")
-                save_image(image*256, save_path)
+        # color = rearrange(color, "(b v) c h w -> b v c h w", b=b, v=v)
+        # print(f"color.shape: {color.shape}")
+        # for i in range(color.shape[0]):  # Iterate over batch
+        #     for j in range(color.shape[1]):  # Iterate over views
+        #         # image = rearrange(color[i, j,...], "c h w -> h w c")  # [c, h, w]
+        #         image = color[i, j, ...]  # [c, h, w]
+        #         print(f"image.shape: {image.shape}")
+        #         save_path = os.path.join(output_dir, f"image_batch_{i}_view_{j}.png")
+        #         save_image(image*256, save_path)
         return color, None

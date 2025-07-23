@@ -213,13 +213,16 @@ class GaussianHead(PixelwiseTaskWithDPT):
             # Spherical Harmonics (3 * sh_degree) +
             # Opacity (1)
         gaussian_num_channels = 3 + 3 + 4 + 3 * sh_degree + 1
-        print(f"PixelwiseTaskWithDPT: num_channels={gaussian_num_channels}, feature_dim={feature_dim}, last_dim={last_dim}, hooks_idx={hooks_idx},dim_tokens={dim_tokens}, depth_mode={depth_mode}, postprocess={postprocess}, conf_mode={conf_mode}, head_type={head_type}")
+        # print(f"PixelwiseTaskWithDPT: num_channels={gaussian_num_channels}, feature_dim={feature_dim}, last_dim={last_dim}, hooks_idx={hooks_idx},dim_tokens={dim_tokens}, depth_mode={depth_mode}, postprocess={postprocess}, conf_mode={conf_mode}, head_type={head_type}")
         self.gaussian_dpt = PixelwiseTaskWithDPT(
             num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
             dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, lowres=False
         )
-        print(f"self.gaussian_dpt: {self.gaussian_dpt}")
-        print(f"self.gaussian_dpt.head: {self.gaussian_dpt.dpt.head}")
+        for param in self.gaussian_dpt.parameters():
+            param.requires_grad = False
+        
+        # print(f"self.gaussian_dpt: {self.gaussian_dpt}")
+        # print(f"self.gaussian_dpt.head: {self.gaussian_dpt.dpt.head}")
 
         final_conv_layer = self.gaussian_dpt.dpt.head[-1]
         splits_and_inits = [
@@ -245,8 +248,8 @@ class GaussianHead(PixelwiseTaskWithDPT):
             num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
             dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, lowres=True
         )
-        print(f"self.gaussian_dpt: {self.gaussian_dpt_lowres}")
-        print(f"self.gaussian_dpt.head: {self.gaussian_dpt_lowres.dpt.head}")
+        # print(f"self.gaussian_dpt: {self.gaussian_dpt_lowres}")
+        # print(f"self.gaussian_dpt.head: {self.gaussian_dpt_lowres.dpt.head}")
 
         final_conv_layer_lowres = self.gaussian_dpt_lowres.dpt.head[-1]
         splits_and_inits_lowres = [

@@ -62,9 +62,13 @@ if __name__ == '__main__':
     
     model_name = "brandonsmart/splatt3r_v1.0"
     # filename = "epoch=19-step=1200.ckpt"
-    filename = "splatt3r_coarse.pth"
+    # filename = "splatt3r_coarse.ckpt"
+
     # weights_path = hf_hub_download(repo_id=model_name, filename=filename)
-    weights_path = "pretrained/" + filename
+    # weights_path = "pretrained/" + filename
+
+    filename = "splatt3r_coarse=0_epoch=08.ckpt"
+    weights_path = "checkpoints/" + filename
     model = main.MAST3RGaussians.load_from_checkpoint(weights_path, device)
     chkpt_tag = hash_md5(weights_path)
     print("loaded weights")

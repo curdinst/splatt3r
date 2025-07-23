@@ -26,6 +26,7 @@ import utils.loss_mask as loss_mask
 import utils.sh_utils as sh_utils
 import utils.lod_utils as lod_utils
 import workspace
+from lightning.pytorch.callbacks import ModelCheckpoint
 
 
 class MAST3RGaussians(L.LightningModule):
@@ -176,19 +177,26 @@ class MAST3RGaussians(L.LightningModule):
         # Predict using the encoder/decoder and calculate the loss
         pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
         if config.train_coarse:
-            print(f"Train Coarse")
             color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss, mse, lpips = self.calculate_loss(
+                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
         else:
             color, _ = self.decoder(batch, pred1, pred2, (h, w))
         
-        # Calculate losses
-        mask = loss_mask.calculate_loss_mask(batch)
-        loss, mse, lpips = self.calculate_loss(
-            batch, view1, view2, pred1, pred2, color, mask,
-            apply_mask=self.config.loss.apply_mask,
-            average_over_mask=self.config.loss.average_over_mask,
-            calculate_ssim=False
-        )
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss, mse, lpips = self.calculate_loss(
+                batch, view1, view2, pred1, pred2, color, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
 
         # Log losses
         self.log_metrics('train', loss, mse, lpips)
@@ -203,17 +211,24 @@ class MAST3RGaussians(L.LightningModule):
         pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
         if config.train_coarse:
             color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss, mse, lpips = self.calculate_loss(
+                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
         else:
             color, _ = self.decoder(batch, pred1, pred2, (h, w))
-
-        # Calculate losses
-        mask = loss_mask.calculate_loss_mask(batch)
-        loss, mse, lpips = self.calculate_loss(
-            batch, view1, view2, pred1, pred2, color, mask,
-            apply_mask=self.config.loss.apply_mask,
-            average_over_mask=self.config.loss.average_over_mask,
-            calculate_ssim=False
-        )
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss, mse, lpips = self.calculate_loss(
+                batch, view1, view2, pred1, pred2, color, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
 
         # Log losses
         self.log_metrics('val', loss, mse, lpips)
@@ -233,15 +248,25 @@ class MAST3RGaussians(L.LightningModule):
                 color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
             else:
                 color, _ = self.decoder(batch, pred1, pred2, (h, w))
-
-        # Calculate losses
-        mask = loss_mask.calculate_loss_mask(batch)
-        loss, mse, lpips, ssim = self.calculate_loss(
-            batch, view1, view2, pred1, pred2, color, mask,
-            apply_mask=self.config.loss.apply_mask,
-            average_over_mask=self.config.loss.average_over_mask,
-            calculate_ssim=True
-        )
+        
+        if config.train_coarse:
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss, mse, lpips, ssim = self.calculate_loss(
+                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=True
+            )
+        else:
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss, mse, lpips, ssim = self.calculate_loss(
+                batch, view1, view2, pred1, pred2, color, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=True
+            )
 
         # Log losses
         self.log_metrics('test', loss, mse, lpips, ssim=ssim)
@@ -253,6 +278,7 @@ class MAST3RGaussians(L.LightningModule):
 
     def calculate_loss(self, batch, view1, view2, pred1, pred2, color, mask, apply_mask=True, average_over_mask=True, calculate_ssim=False):
 
+        print(f"len batch['target'] = {len(batch['target'])}")
         target_color = torch.stack([target_view['original_img'] for target_view in batch['target']], dim=1)
         predicted_color = color
 
@@ -260,7 +286,7 @@ class MAST3RGaussians(L.LightningModule):
             assert mask.sum() > 0, "There are no valid pixels in the mask!"
             target_color = target_color * mask[..., None, :, :]
             predicted_color = predicted_color * mask[..., None, :, :]
-
+        print(f"target_color.shape: {target_color.shape}, predicted_color.shape: {predicted_color.shape}, mask.shape: {mask.shape}")
         flattened_color = einops.rearrange(predicted_color, 'b v c h w -> (b v) c h w')
         flattened_target_color = einops.rearrange(target_color, 'b v c h w -> (b v) c h w')
         flattened_mask = einops.rearrange(mask, 'b v h w -> (b v) h w')
@@ -272,6 +298,7 @@ class MAST3RGaussians(L.LightningModule):
         else:
             mse_loss = rgb_l2_loss.mean()
 
+        print(f"flattened_color.shape: {flattened_color.shape}, flattened_target_color.shape: {flattened_target_color.shape}")
         # LPIPS loss
         lpips_loss = self.lpips_criterion(flattened_target_color, flattened_color, normalize=True)
         if average_over_mask:
@@ -334,6 +361,9 @@ def run_experiment(config):
     # Set the seed
     L.seed_everything(config.seed, workers=True)
 
+    if config.train_coarse:
+        print(f"Training Coarse Head")
+
     # Set up loggers
     os.makedirs(os.path.join(config.save_dir, config.name), exist_ok=True)
     loggers = []
@@ -376,10 +406,11 @@ def run_experiment(config):
     print('Loading Model')
     model = MAST3RGaussians(config)
     if config.use_pretrained:
-        ckpt = torch.load(config.pretrained_mast3r_path)
-        print(f"ckpt keys: {ckpt.keys()}")
-        _ = model.encoder.load_state_dict(ckpt['state_dict'], strict=False)
-        del ckpt
+        # ckpt = torch.load(config.pretrained_mast3r_path)
+        # print(f"ckpt keys: {ckpt.keys()}")
+        # _ = model.encoder.load_state_dict(ckpt['state_dict'], strict=False)
+        # del ckpt
+        model = MAST3RGaussians.load_from_checkpoint(checkpoint_path=config.pretrained_mast3r_path, device='cuda:0')
 
     # Training Datasets
     print(f'Building Datasets')
@@ -412,12 +443,21 @@ def run_experiment(config):
 
     # Training
     print('Training')
+    coarse = "coarse" if config.train_coarse else ""
+    val_every_n_epochs = 1
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=config.checkpoint_file_path, # <--- specify this on the trainer itself for version control
+        filename="splatt3r_{coarse}_{epoch:02d}",
+        every_n_epochs=val_every_n_epochs,
+        save_top_k=-1,  # <--- this is important!
+    )
     trainer = L.Trainer(
         accelerator="gpu",
         benchmark=True,
         callbacks=[
             L.pytorch.callbacks.LearningRateMonitor(logging_interval='epoch', log_momentum=True),
             export.SaveBatchData(save_dir=config.save_dir),
+            checkpoint_callback
         ],
         check_val_every_n_epoch=1,
         default_root_dir=config.save_dir,
