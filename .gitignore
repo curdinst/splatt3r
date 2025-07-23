@@ -2,3 +2,4 @@ scannetpp/coverage*
 coverage*
 dataset/
 data/scannetpp/test*
+results/

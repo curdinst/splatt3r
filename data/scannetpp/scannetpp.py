@@ -30,10 +30,10 @@ class ScanNetPPData():
 
         # Fetch the sequences to use
         if stage == "train":
-            sequence_file = os.path.join(self.root, "splits", "nvs_sem_train.txt")
+            sequence_file = os.path.join(self.root, "splits_50", "nvs_sem_train.txt")
             bad_scenes = ['303745abc7']
         elif stage == "val" or stage == "test":
-            sequence_file = os.path.join(self.root, "splits", "nvs_sem_val.txt")
+            sequence_file = os.path.join(self.root, "splits_50", "nvs_sem_val.txt")
             bad_scenes = ['cc5237fd77']
         with open(sequence_file, "r") as f:
             self.sequences = f.read().splitlines()
