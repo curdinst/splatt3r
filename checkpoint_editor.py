@@ -58,7 +58,7 @@ for key in list(MASt3R_gaussians_v1_keys):
         splatt3r_lowres['state_dict'][key_modified].requires_grad = True
         print(f"{key_modified} requires_grad: {splatt3r_lowres['state_dict'][key_modified].requires_grad}")
 
-torch.save(splatt3r_lowres, 'pretrained/splatt3r_coarse1.ckpt')
+# torch.save(splatt3r_lowres, 'pretrained/splatt3r_coarse1.ckpt')
 #===================================================================================================================
 # filename = "epoch=19-step=1200.ckpt"
 # splatt3r_lowres = torch.load('pretrained/splatt3r_lowres.pth')

@@ -17,12 +17,13 @@ class SaveBatchData(L.Callback):
     '''A Lightning callback that occasionally saves batch inputs and outputs to disk.
     It is not critical to the training process, and can be disabled if unwanted.'''
 
-    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True):
+    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, lod=False):
         self.save_dir = save_dir
         self.train_save_interval = train_save_interval
         self.val_save_interval = val_save_interval
         self.test_save_interval = test_save_interval
         self.coarse = coarse
+        self.lod = lod
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx % self.train_save_interval == 0 and trainer.global_rank == 0:
@@ -44,9 +45,11 @@ class SaveBatchData(L.Callback):
         _, _, h, w = batch["context"][0]["img"].shape
         view1, view2 = batch['context']
         pred1, pred2, pred1_lowres, pred2_lowres = pl_module.forward(view1, view2)
-        if self.coarse:
+        if self.coarse or self.lod:
             pred1, pred2 = pred1_lowres, pred2_lowres
-        color, depth = pl_module.decoder(batch, pred1, pred2, (h, w))
+        
+        color, depth = pl_module.decoder(batch, pred1, pred2, (h, w), fused_gaussians=self.lod)
+        
         mask = loss_mask.calculate_loss_mask(batch)
 
         # Save the data
@@ -54,10 +57,10 @@ class SaveBatchData(L.Callback):
             self.save_dir,
             f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
         )
-        log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir)
+        log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, lod=self.lod)
 
 
-def save_as_ply(pred1, pred2, save_path, as_list=False):
+def save_as_ply(pred1, pred2, save_path, as_list=False, lod=True):
     """Save the 3D Gaussians as a point cloud in the PLY format.
     Adapted loosely from PixelSplat"""
 
@@ -106,14 +109,31 @@ def save_as_ply(pred1, pred2, save_path, as_list=False):
     # covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
     # harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
     # opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+    if lod:
+        means = torch.cat((pred1["means"], pred2["means_in_other_view"]), dim=1).unsqueeze(0)
+        covariances = torch.cat((pred1["covariances"], pred2["covariances"]), dim=1).unsqueeze(0)
+        harmonics = torch.cat((pred1["sh"], pred2["sh"]), dim=1).unsqueeze(0).squeeze(-1)
+        opacities = torch.cat((pred1["opacities"], pred2["opacities"]), dim=1).unsqueeze(0)
+    else:
+        if "means_in_other_view" in pred2.keys():
+            means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
+        else:
+            means = torch.stack([pred1["means"], pred2["means"]], dim=1)
+        covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
+        harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
+        opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+        
+    # means = pred1["means"].unsqueeze(0)  # Remove the batch dimension
+    # covariances = pred1["covariances"].unsqueeze(0)  # Remove the batch dimension
+    # harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
+    # opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
 
-    means = pred1["means"].unsqueeze(0)  # Remove the batch dimension
-    covariances = pred1["covariances"].unsqueeze(0)  # Remove the batch dimension
-    harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
-    opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
-
-
-    if not as_list:
+    if lod:
+        means = einops.rearrange(means[0], "view n xyz -> (view n) xyz").detach().cpu().numpy()
+        covariances = einops.rearrange(covariances[0], "v n i j -> (v n) i j")
+        harmonics = einops.rearrange(harmonics[0], "view n xyz -> (view n) xyz").detach().cpu().numpy()
+        opacities = einops.rearrange(opacities[0], "view n xyz -> (view n) xyz").detach().cpu().numpy()
+    elif not as_list:
         # Rearrange the tensors to the correct shape
         means = einops.rearrange(means[0], "view h w xyz -> (view h w) xyz").detach().cpu().numpy()
         covariances = einops.rearrange(covariances[0], "v h w i j -> (v h w) i j")
@@ -140,6 +160,15 @@ def save_as_ply(pred1, pred2, save_path, as_list=False):
     scene = PlyData([point_cloud])
     scene.write(save_path)
 
+def save_gaussian_dpts(model, save_path):
+    gaussian_dpts = {}
+    for key in list(model.keys()):
+        if 'gaussian_dpt' in key:
+            print(key)
+            gaussian_dpts[key] = model[key].clone()
+            print(f"saving key {key}")
+    torch.save(gaussian_dpts, save_path)
+            
 
 def save_3d(view1, view2, pred1, pred2, save_dir, as_pointcloud=True, all_points=True):
     """Save the 3D points as a point cloud or as a mesh. Adapted from DUSt3R"""
@@ -179,13 +208,13 @@ def save_3d(view1, view2, pred1, pred2, save_dir, as_pointcloud=True, all_points
 
 
 @torch.no_grad()
-def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False):
+def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False, lod=False):
     '''Save all the relevant debug files for a batch'''
 
     os.makedirs(save_dir, exist_ok=True)
 
     # Save the 3D Gaussians as a .ply file
-    save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"))
+    # save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), lod=lod)
 
     # Save the 3D points as a point cloud and as a mesh (disabled)
     if should_save_3d:
@@ -197,11 +226,22 @@ def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_
     context_original_images = torch.stack([view["original_img"] for view in batch["context"]], dim=1)
     context_depthmaps = torch.stack([view["depthmap"] for view in batch["context"]], dim=1)
     context_valid_masks = torch.stack([view["valid_mask"] for view in batch["context"]], dim=1)
+
+    if "mask_highres" in pred1.keys():
+        # print(f"saving mask")
+        # print(f"context_images.shape: {context_original_images.shape}")
+        # print(f"pred1['mask_highres'].shape: {pred1['mask_highres'].shape}")
+        # print(f"pred2['mask_highres'].shape: {pred2['mask_highres'].shape}")
+        context_images_lod_masked = context_original_images.clone()
+        context_images_lod_masked[:,0,:,pred1['mask_highres'][0,...]] = 0.0
+        context_images_lod_masked[:,1,:,pred2['mask_highres'][0,...]] = 0.0
     for b in range(min(context_images.shape[0], 4)):
         torchvision.utils.save_image(context_images[b], os.path.join(save_dir, f"sample_{b}_img_context.jpg"))
         torchvision.utils.save_image(context_original_images[b], os.path.join(save_dir, f"sample_{b}_original_img_context.jpg"))
         torchvision.utils.save_image(context_depthmaps[b, :, None, ...], os.path.join(save_dir, f"sample_{b}_depthmap.jpg"), normalize=True)
         torchvision.utils.save_image(context_valid_masks[b, :, None, ...].float(), os.path.join(save_dir, f"sample_{b}_valid_mask_context.jpg"), normalize=True)
+        if "mask_highres" in pred1.keys():
+            torchvision.utils.save_image(context_images_lod_masked[b].float(), os.path.join(save_dir, f"sample_{b}_LoD_mask_context.jpg"), normalize=True)
 
     # Save the color and depth images for the target images
     target_original_images = torch.stack([view["original_img"] for view in batch["target"]], dim=1)

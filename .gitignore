@@ -7,3 +7,4 @@ data/scannetpp/*json
 data/scannetpp/coverage*
 results/
 __pycache__/
+output.txt

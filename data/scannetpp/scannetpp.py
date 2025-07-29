@@ -30,10 +30,10 @@ class ScanNetPPData():
 
         # Fetch the sequences to use
         if stage == "train":
-            sequence_file = os.path.join(self.root, "splits_50", "nvs_sem_train.txt")
+            sequence_file = os.path.join(self.root, "splits_splatt3r", "nvs_sem_train.txt")
             bad_scenes = ['303745abc7']
         elif stage == "val" or stage == "test":
-            sequence_file = os.path.join(self.root, "splits_50", "nvs_sem_val.txt")
+            sequence_file = os.path.join(self.root, "splits_splatt3r", "nvs_sem_val.txt")
             bad_scenes = ['cc5237fd77']
         with open(sequence_file, "r") as f:
             self.sequences = f.read().splitlines()
@@ -41,7 +41,7 @@ class ScanNetPPData():
         # Remove scenes that have frames with no valid depths
         logger.info(f"Removing scenes that have frames with no valid depths: {bad_scenes}")
         self.sequences = [s for s in self.sequences if s not in bad_scenes]
-        print(f"self.sequences: {self.sequences}")
+        # print(f"self.sequences: {self.sequences}")
         P = np.array([
             [1, 0, 0, 0],
             [0, -1, 0, 0],
@@ -118,7 +118,10 @@ class ScanNetPPData():
     def get_view(self, sequence, view_idx, resolution):
 
         # RGB Image
-        rgb_path = self.color_paths[sequence][view_idx]
+        try:
+            rgb_path = self.color_paths[sequence][view_idx]
+        except:
+            print(f"Loading RGB image for sequence: {sequence}, view index: {view_idx}")
         rgb_image = imread_cv2(rgb_path)
 
         # Depthmap
@@ -159,6 +162,7 @@ def get_scannet_dataset(root, stage, resolution, num_epochs_per_epoch=1):
     coverage = {}
     for sequence in data.sequences:
         try:
+            # print(f"sequence: {sequence}")
             with open(f'./data/scannetpp/coverage/{sequence}.json', 'r') as f:
                 sequence_coverage = json.load(f)
             coverage[sequence] = sequence_coverage[sequence]

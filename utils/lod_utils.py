@@ -95,11 +95,11 @@ def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
         valid_rearranged = einops.rearrange(valid, "(h w) -> h w", h=H, w=W)
     else:
         valid_rearranged = valid
-    print(f"valid_rearranged shape: {valid_rearranged.shape}")
+    # print(f"valid_rearranged shape: {valid_rearranged.shape}")
     mask = mask_x & mask_y & depth_mask_x & depth_mask_y & valid_rearranged
     # print("Mask shape:", mask.shape)
-    print(f"mask.sum(): {mask.sum()}, mask.numel(): {mask.numel()}, mask.sum()/mask.numel(): {mask.sum()/mask.numel()}")
-    print(H,W, "Downsampled mask shape:", mask.shape)
+    # print(f"mask.sum(): {mask.sum()}, mask.numel(): {mask.numel()}, mask.sum()/mask.numel(): {mask.sum()/mask.numel()}")
+    # print(H,W, "Downsampled mask shape:", mask.shape)
 
     H_mask, W_mask = H // 2, W // 2
     # mask_downsampled = F.upsample(mask.float().unsqueeze(0), size=(H_mask,W_mask), mode="bilinear")
@@ -108,7 +108,7 @@ def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
     mask_downsampled = (mask_downsampled > 0.9)
     # print("Downsampled mask sum:", mask_downsampled.sum(), "numel:", mask_downsampled.numel(), "ratio:", mask_downsampled.sum()/mask_downsampled.numel())
     mask_upsampled = F.interpolate(mask_downsampled.float(), size=(H, W), mode="nearest").squeeze(0).squeeze(0).bool()
-    print("mask_downsampled.shape :", mask_downsampled.shape, "mask_upsampled.shape:", mask_upsampled.shape)
+    # print("mask_downsampled.shape :", mask_downsampled.shape, "mask_upsampled.shape:", mask_upsampled.shape)
     return mask_downsampled.squeeze(0).squeeze(0), ~mask_upsampled.squeeze(0).squeeze(0)  # Returns (H//2, W//2) and (H, W) masks
 
 def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
@@ -137,8 +137,8 @@ def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
     for key in pred.keys():
         if key not in ["means", "opacities", "sh", "rotations", "scales", "covariances"]:
             continue
-        print(f"pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
-        print(f"mask shape: {mask.shape}, mask_lowres shape: {mask_lowres.shape}")
+        # print(f"pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
+        # print(f"mask shape: {mask.shape}, mask_lowres shape: {mask_lowres.shape}")
         # pred_key = einops.rearrange(pred[key], "b h w ... -> b (h w) ...")
         # pred_lowres_key = einops.rearrange(pred_lowres[key], "b h w ... -> b (h w) ...")
         # mask = einops.rearrange(mask, "b h w -> b (h w)")
@@ -150,9 +150,10 @@ def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
         # print(pred_combined[key].shape, "for key:", key)
         tensor_list = []
         for b in range(pred["means"].shape[0]):
-            print(f"key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
+            # print(f"fusing key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
             tensor_list.append(torch.cat([pred[key][b,mask[b,...],...], pred_lowres[key][b,mask_lowres[b,...],:]], dim=0))
         pred_combined[key] = torch.stack(tensor_list, dim=0)
+        # print(f"-- pred_combined[key].shape: {pred_combined[key].shape}, for key: {key}")
     return pred_combined
 
 

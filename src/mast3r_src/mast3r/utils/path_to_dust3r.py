@@ -14,6 +14,7 @@ DUSt3R_LIB_PATH = path.join(DUSt3R_REPO_PATH, 'dust3r')
 if path.isdir(DUSt3R_LIB_PATH):
     # workaround for sibling import
     sys.path.insert(0, DUSt3R_REPO_PATH)
+    print(f"Importing dust3r from {DUSt3R_REPO_PATH}")
 else:
     raise ImportError(f"dust3r is not initialized, could not find: {DUSt3R_LIB_PATH}.\n "
                       "Did you forget to run 'git submodule update --init --recursive' ?")

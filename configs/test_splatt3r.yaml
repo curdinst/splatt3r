@@ -1,4 +1,4 @@
-name: '%Y-%m-%d-%H-%M-%S'
+name: '%Y-%m-%d-%H-%M-%S_Test'
 
 save_dir: './results/${name}/'
 
@@ -10,21 +10,20 @@ devices: [0]
 use_profiler: False
 loggers:
   use_csv_logger: True
-  use_wandb: True
+  use_wandb: False
 
 # Model
 use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
-pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
-# pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
-checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
+# pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
+# pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=02_batch1_v2.ckpt'
+pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=07_head_only.ckpt'
 
-grad_gaussian_dpt: True
-grad_gaussian_lowres_dpt: True
-use_lod: True
+
+use_lod: False
 th_rgb: 0.3
 th_depth: 0.5
-train_coarse: False
+train_coarse: True
 train_head_only: False
 
 # Data
@@ -33,14 +32,14 @@ data:
   batch_size: 1
   num_workers: 4
   resolution: [512, 512]
-  epochs_per_train_epoch: 4 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
+  epochs_per_train_epoch: 12 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
 
 # Optimization
-opt:
-  epochs: 10 #5 # 20
-  lr: 0.00001
-  weight_decay: 0.05
-  gradient_clip_val: 0.5
+# opt:
+#   epochs: 10 #5 # 20
+#   lr: 0.00001
+#   weight_decay: 0.05
+#   gradient_clip_val: 0.5
 
 loss:
   mse_loss_weight: 1.0

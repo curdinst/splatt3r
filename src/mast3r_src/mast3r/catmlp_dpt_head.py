@@ -13,6 +13,7 @@ from dust3r.heads.postprocess import reg_dense_depth, reg_dense_conf  # noqa
 from dust3r.heads.dpt_head import PixelwiseTaskWithDPT  # noqa
 import dust3r.utils.path_to_croco  # noqa
 from models.blocks import Mlp  # noqa
+# from src.mast3r_src.dust3r.croco.models.head_downstream import PixelwiseTaskWithDPT  # noqa
 
 
 def reg_desc(desc, mode):
