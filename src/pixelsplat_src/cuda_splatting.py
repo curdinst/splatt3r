@@ -121,8 +121,9 @@ def render_cuda(
             opacities=gaussian_opacities[i, ..., None],
             cov3D_precomp=gaussian_covariances[i, :, row, col],
         )
-        # print("output", output)
-        (image, radii, _, _, _) = output
+        # print("output", output) color, radii, depth, opacity, n_touched
+        (image, radii, depth, opacity, n_touched) = output
+        # print(f"n_touched: {n_touched}, shape: {n_touched.shape}")
         all_images.append(image)
         all_radii.append(radii)
     return torch.stack(all_images)

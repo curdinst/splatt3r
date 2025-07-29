@@ -10,7 +10,7 @@ devices: [0]
 use_profiler: False
 loggers:
   use_csv_logger: True
-  use_wandb: True
+  use_wandb: False
 
 # Model
 use_pretrained: True
@@ -19,7 +19,7 @@ pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
 checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
 
-grad_gaussian_dpt: True
+grad_gaussian_dpt: False
 grad_gaussian_lowres_dpt: True
 use_lod: True
 th_rgb: 0.3
