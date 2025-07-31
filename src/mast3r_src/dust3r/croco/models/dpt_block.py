@@ -290,7 +290,7 @@ class DPTOutputAdapter(nn.Module):
                  dim_tokens_enc: Optional[int] = None,
                  head_type: str = 'regression',
                  output_width_ratio=1,
-                 lowres: bool = False,
+                 resolution: int = 512,
                  **kwargs):
         super().__init__()
         self.num_channels = num_channels
@@ -314,7 +314,7 @@ class DPTOutputAdapter(nn.Module):
         self.scratch.refinenet3 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
         self.scratch.refinenet4 = make_fusion_block(feature_dim, use_bn, output_width_ratio)
 
-        if self.head_type == 'regression' and not lowres:
+        if self.head_type == 'regression' and resolution == 512:
             # The "DPTDepthModel" head
             self.head = nn.Sequential(
                 nn.Conv2d(feature_dim, feature_dim // 2, kernel_size=3, stride=1, padding=1),
@@ -324,12 +324,22 @@ class DPTOutputAdapter(nn.Module):
                 nn.Conv2d(last_dim, self.num_channels, kernel_size=1, stride=1, padding=0)
             )
         # @Added
-        elif self.head_type == 'regression' and lowres:
+        elif self.head_type == 'regression' and resolution == 256:
             # The "DPTDepthModel" head
             self.head = nn.Sequential(
                 nn.Conv2d(feature_dim, feature_dim // 2, kernel_size=3, stride=1, padding=1),
                 Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
                 nn.Conv2d(feature_dim // 2, last_dim, kernel_size=3, stride=2, padding=1), # Stride 2 here to get half resolution!
+                nn.ReLU(True),
+                nn.Conv2d(last_dim, self.num_channels, kernel_size=1, stride=1, padding=0)
+            )
+        # @Added
+        elif self.head_type == 'regression' and resolution == 128:
+            # The "DPTDepthModel" head
+            self.head = nn.Sequential(
+                nn.Conv2d(feature_dim, feature_dim // 2, kernel_size=3, stride=2, padding=1), # Stride 2 here ...
+                Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
+                nn.Conv2d(feature_dim // 2, last_dim, kernel_size=3, stride=2, padding=1), # ... and here to get quarter resolution!
                 nn.ReLU(True),
                 nn.Conv2d(last_dim, self.num_channels, kernel_size=1, stride=1, padding=0)
             )

@@ -43,23 +43,54 @@ import torch
 
 # MASt3R_gaussians_v1 = torch.load('checkpoints/MASt3R_gaussians_v1.pth', map_location='cpu')
 
-# ADD Gaussian DPT for low resolutions ===========================================================================
-filename = "epoch=19-step=1200.ckpt"
-MASt3R_gaussians_v1 = torch.load('pretrained/'+filename, map_location='cpu')
-MASt3R_gaussians_v1_keys = MASt3R_gaussians_v1['state_dict'].keys()
 
-splatt3r_lowres = MASt3R_gaussians_v1.copy()
+def clone_head():
+    # ADD Gaussian DPT for low resolutions ===========================================================================
+    filename = "splatt3r_coarse.ckpt"
+    MASt3R_gaussians_v1 = torch.load('pretrained/'+filename, map_location='cpu')
+    MASt3R_gaussians_v1_keys = MASt3R_gaussians_v1['state_dict'].keys()
 
-for key in list(MASt3R_gaussians_v1_keys):
-    if 'gaussian_dpt' in key:
-        print(key)
-        key_modified = key.replace('gaussian_dpt', 'gaussian_dpt_lowres')
-        splatt3r_lowres['state_dict'][key_modified] = MASt3R_gaussians_v1['state_dict'][key].clone()
-        splatt3r_lowres['state_dict'][key_modified].requires_grad = True
-        print(f"{key_modified} requires_grad: {splatt3r_lowres['state_dict'][key_modified].requires_grad}")
+    splatt3r_lowres = MASt3R_gaussians_v1.copy()
 
-# torch.save(splatt3r_lowres, 'pretrained/splatt3r_coarse1.ckpt')
-#===================================================================================================================
+    for key in list(MASt3R_gaussians_v1_keys):
+        if 'gaussian_dpt_lowres' in key:
+            print(key)
+            key_modified = key.replace('lowres', '256')
+            # splatt3r_lowres['state_dict'][key_modified] = MASt3R_gaussians_v1['state_dict'][key].clone()
+            # splatt3r_lowres['state_dict'][key_modified].requires_grad = True
+            key_modified_128 = key_modified.replace('256', '128')
+            splatt3r_lowres['state_dict'][key_modified_128] = MASt3R_gaussians_v1['state_dict'][key].clone()
+            splatt3r_lowres['state_dict'][key_modified] = MASt3R_gaussians_v1['state_dict'].pop(key)
+
+
+            # splatt3r_lowres['state_dict'][key_modified_128].requires_grad = True
+            print(f"{key_modified} requires_grad: {splatt3r_lowres['state_dict'][key_modified].requires_grad}")
+            print(f"{key_modified_128} requires_grad: {splatt3r_lowres['state_dict'][key_modified_128].requires_grad}")
+
+    # torch.save(splatt3r_lowres, 'pretrained/splatt3r_3stage.ckpt')
+    #===================================================================================================================
+
+def save_dpt_params(filename, savepath=None):
+    modelpath = savepath + filename
+    model = torch.load(modelpath, map_location='cpu')
+    dpt_params = {}
+    for key, value in model['state_dict'].items():
+        if 'gaussian_dpt' in key:
+            dpt_params[key] = value
+            print(f"Extracted {key} with shape {value.shape}")
+
+    torch.save(dpt_params, modelpath.replace('.ckpt', '_dpt_params.pth'))
+
+# clone_head()
+
+CHECKPOINTS_DIR = "/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/keep/"
+
+# model_name = "splatt3r_coarse=0_epoch=09_batch2"
+model_name = "splatt3r_coarse=0_epoch=02_batch1_v2"
+
+filename = model_name + ".ckpt"
+save_dpt_params(filename, savepath=CHECKPOINTS_DIR)
+
 # filename = "epoch=19-step=1200.ckpt"
 # splatt3r_lowres = torch.load('pretrained/splatt3r_lowres.pth')
 # splatt3r = torch.load('pretrained/' + filename)

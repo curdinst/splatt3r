@@ -15,16 +15,21 @@ loggers:
 # Model
 use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
+pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
 # pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=02_batch1_v2.ckpt'
-pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=07_head_only.ckpt'
+# pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=07_head_only.ckpt'
+# pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=07_head_only.ckpt'
 
-
+grad_gaussian_dpt: False
+grad_gaussian_256_dpt: False
+grad_gaussian_128_dpt: False
 use_lod: False
 th_rgb: 0.3
 th_depth: 0.5
-train_coarse: True
+resolution: 512
 train_head_only: False
+use_calib: True
 
 # Data
 data:
@@ -48,5 +53,5 @@ loss:
   apply_mask: True
   average_over_mask: True
 
-use_offsets: True
+use_offsets: False
 sh_degree: 1

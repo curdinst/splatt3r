@@ -27,7 +27,7 @@ import utils.sh_utils as sh_utils
 import utils.lod_utils as lod_utils
 import workspace
 from lightning.pytorch.callbacks import ModelCheckpoint
-
+from utils.mast3r_slam_geometry import constrain_points_to_ray, depth_map_to_points
 
 class MAST3RGaussians(L.LightningModule):
 
@@ -64,17 +64,20 @@ class MAST3RGaussians(L.LightningModule):
 
         self.encoder.downstream_head1.gaussian_dpt.dpt.requires_grad_(self.config["grad_gaussian_dpt"])
         self.encoder.downstream_head2.gaussian_dpt.dpt.requires_grad_(self.config["grad_gaussian_dpt"])
-        self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.requires_grad_(self.config["grad_gaussian_lowres_dpt"])
-        self.encoder.downstream_head2.gaussian_dpt_lowres.dpt.requires_grad_(self.config["grad_gaussian_lowres_dpt"])
-        if self.config["train_head_only"]:
-            self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.requires_grad_(False)
-            self.encoder.downstream_head2.gaussian_dpt_lowres.dpt.requires_grad_(False)
-            self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.head.requires_grad_(True)
-            self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.head.requires_grad_(True)
-            self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.act_postprocess.requires_grad_(True)
-            self.encoder.downstream_head1.gaussian_dpt_lowres.dpt.act_postprocess.requires_grad_(True)
+        self.encoder.downstream_head1.gaussian_dpt_256.dpt.requires_grad_(self.config["grad_gaussian_256_dpt"])
+        self.encoder.downstream_head2.gaussian_dpt_256.dpt.requires_grad_(self.config["grad_gaussian_256_dpt"])
+        self.encoder.downstream_head1.gaussian_dpt_128.dpt.requires_grad_(self.config["grad_gaussian_128_dpt"])
+        self.encoder.downstream_head2.gaussian_dpt_128.dpt.requires_grad_(self.config["grad_gaussian_128_dpt"])
 
-        print(f" train_coarse = {self.config['train_coarse']}, head_only = {self.config['train_head_only']} use_lod = {self.config['use_lod']}")
+        if self.config["train_head_only"]:
+            self.encoder.downstream_head1.gaussian_dpt_256.dpt.requires_grad_(False)
+            self.encoder.downstream_head2.gaussian_dpt_256.dpt.requires_grad_(False)
+            self.encoder.downstream_head1.gaussian_dpt_256.dpt.head.requires_grad_(True)
+            self.encoder.downstream_head1.gaussian_dpt_256.dpt.head.requires_grad_(True)
+            self.encoder.downstream_head1.gaussian_dpt_256.dpt.act_postprocess.requires_grad_(True)
+            self.encoder.downstream_head1.gaussian_dpt_256.dpt.act_postprocess.requires_grad_(True)
+
+        print(f" resolution = {self.config['resolution']}, head_only = {self.config['train_head_only']} use_lod = {self.config['use_lod']}")
         # The decoder which we use to render the predicted Gaussians into
         # images, lightly modified from PixelSplat
         self.decoder = pixelsplat_decoder.DecoderSplattingCUDA(
@@ -104,20 +107,24 @@ class MAST3RGaussians(L.LightningModule):
             dec1, dec2 = self.encoder._decoder(feat1, pos1, feat2, pos2)
 
         # Train the downstream heads
-        pred1, pred1_lowres = self.encoder._downstream_head(1, [tok.float() for tok in dec1], shape1)
-        pred2, pred2_lowres = self.encoder._downstream_head(2, [tok.float() for tok in dec2], shape2)
+        pred1, pred1_256, pred1_128 = self.encoder._downstream_head(1, [tok.float() for tok in dec1], shape1)
+        pred2, pred2_256, pred2_128 = self.encoder._downstream_head(2, [tok.float() for tok in dec2], shape2)
 
         pred1['covariances'] = geometry.build_covariance(pred1['scales'], pred1['rotations'])
         pred2['covariances'] = geometry.build_covariance(pred2['scales'], pred2['rotations'])
 
-        pred1_lowres['covariances'] = geometry.build_covariance(pred1_lowres['scales'], pred1_lowres['rotations'])
-        pred2_lowres['covariances'] = geometry.build_covariance(pred2_lowres['scales'], pred2_lowres['rotations'])
-        # print(f"pred1_lowres['covariances']: {pred1_lowres['covariances'].shape}")
-        # print(f"pred1_lowres['opacities']: {pred1_lowres['opacities'].shape}")
-        # pred1_lowres['covariances'] = pred1['covariances'][:,::2,::2,:]
-        # pred2_lowres['covariances'] = pred2['covariances'][:,::2,::2,:]
-        # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]
-        # pred1_lowres['opacities'] = pred1['opacities'][:,::2,::2,:]            
+        pred1_256['covariances'] = geometry.build_covariance(pred1_256['scales'], pred1_256['rotations'])
+        pred2_256['covariances'] = geometry.build_covariance(pred2_256['scales'], pred2_256['rotations'])
+
+        pred1_128['covariances'] = geometry.build_covariance(pred1_128['scales'], pred1_128['rotations'])
+        pred2_128['covariances'] = geometry.build_covariance(pred2_128['scales'], pred2_128['rotations'])
+
+        # print(f"pred1_256['covariances']: {pred1_256['covariances'].shape}")
+        # print(f"pred1_256['opacities']: {pred1_256['opacities'].shape}")
+        # pred1_256['covariances'] = pred1['covariances'][:,::2,::2,:]
+        # pred2_256['covariances'] = pred2['covariances'][:,::2,::2,:]
+        # pred1_256['opacities'] = pred1['opacities'][:,::2,::2,:]
+        # pred1_256['opacities'] = pred1['opacities'][:,::2,::2,:]            
         
         learn_residual = True
         if learn_residual:
@@ -128,18 +135,60 @@ class MAST3RGaussians(L.LightningModule):
             new_sh2[..., 0] = sh_utils.RGB2SH(einops.rearrange(view2['original_img'], 'b c h w -> b h w c'))
             pred1['sh'] = pred1['sh'] + new_sh1
             pred2['sh'] = pred2['sh'] + new_sh2
-           
-            sh1_downsampled = (new_sh1[:,::2,::2,:] + new_sh1[:,1::2,::2,:] + new_sh1[:,::2,1::2,:] + new_sh1[:,1::2,1::2,:])/ 4.0
-            sh2_downsampled = (new_sh2[:,::2,::2,:] + new_sh2[:,1::2,::2,:] + new_sh2[:,::2,1::2,:] + new_sh2[:,1::2,1::2,:])/ 4.0
-            pred1_lowres['sh'] = sh1_downsampled
-            pred2_lowres['sh'] = sh2_downsampled
+
+            sh1_256 = (new_sh1[:,::2,::2,:] + new_sh1[:,1::2,::2,:] + new_sh1[:,::2,1::2,:] + new_sh1[:,1::2,1::2,:])/ 4.0
+            sh2_256 = (new_sh2[:,::2,::2,:] + new_sh2[:,1::2,::2,:] + new_sh2[:,::2,1::2,:] + new_sh2[:,1::2,1::2,:])/ 4.0
+            pred1_256['sh'] = sh1_256
+            pred2_256['sh'] = sh2_256
+
+            sh1_128 = (sh1_256[:,::2,::2,:] + sh1_256[:,1::2,::2,:] + sh1_256[:,::2,1::2,:] + sh1_256[:,1::2,1::2,:])/ 4.0
+            sh2_128 = (sh2_256[:,::2,::2,:] + sh2_256[:,1::2,::2,:] + sh2_256[:,::2,1::2,:] + sh2_256[:,1::2,1::2,:])/ 4.0
+
+            pred1_128['sh'] = pred1_128['sh'] + sh1_128
+            pred2_128['sh'] = pred2_128['sh'] + sh2_128
+
+        if self.config["use_calib"]:
+            intrinsics1 = view1['camera_intrinsics']
+            intrinsics2 = view2['camera_intrinsics']
+            T_wc1 = view1['camera_pose'] # c2w
+            T_wc2 = view2['camera_pose']
+            print(f"extinsics1: {T_wc1}")
+            T_c1_c2 = torch.linalg.inv(T_wc1) @ T_wc2 # T_wc1^-1 @ T_wc2 = T_c1c2
+            depth1 = view1['depthmap']
+            depth2 = view2['depthmap']
+            assert intrinsics1.shape[0] == 1, "assume single batch"
+            assert intrinsics2.shape[0] == 1, "assume single batch"
+            intrinsics1, intrinsics2 = intrinsics1[0,...], intrinsics2[0,...]
+            h, w = view1['original_img'].shape[-2:]
+            print(f"h, w = {h}, {w}")
+            print(f"inrinsics__: {intrinsics1[0,0]}, {intrinsics1[1,1]}, {intrinsics1[0,2]}, {intrinsics1[1,2]}")
+
+            print(f"pred1[means].shape = {pred1['means'].shape}, pred2[means].shape = {pred2['means'].shape}")
+            print(f"depth1.shape = {depth1.shape}, depth2.shape = {depth2.shape}")
+            pred1['means'] = depth_map_to_points((h, w), depth1, intrinsics1)
+            points2_c2 = depth_map_to_points((h, w), depth2, intrinsics2) # (b, h, w, 3)
+            points2_homogeneous_c2 = torch.cat([points2_c2, torch.ones_like(points2_c2[..., :1])], dim=-1)
+
+            points2_c1 = torch.einsum('bij, bhwj -> bhwi', T_c1_c2, points2_homogeneous_c2)
+            pred2['means'] = points2_c1[..., :3] # (b, h, w, 3)
+
+            pred1['pts3d'] = pred1['means']
+            pred2['pts3d'] = pred2['means']
+
+
 
         # print(f"max sh1: {pred1['sh'].max()}, min sh1: {pred1['sh'].min()}")
         means1 = pred1['means']
         means2 = pred2['means']
         # print(f"means1 shape = {means1.shape}, means2 shape = {means2.shape}")
-        pred1_lowres['means'] = (means1[:,::2,::2,:] + means1[:,1::2,::2,:] + means1[:,::2,1::2,:] + means1[:,1::2,1::2,:]) / 4.0
-        pred2_lowres['means_in_other_view'] = (means2[:,::2,::2,:] + means2[:,1::2,::2,:] + means2[:,::2,1::2,:] + means2[:,1::2,1::2,:]) / 4.0
+        pred1_256['means'] = (means1[:,::2,::2,:] + means1[:,1::2,::2,:] + means1[:,::2,1::2,:] + means1[:,1::2,1::2,:]) / 4.0
+        pred2_256['means_in_other_view'] = (means2[:,::2,::2,:] + means2[:,1::2,::2,:] + means2[:,::2,1::2,:] + means2[:,1::2,1::2,:]) / 4.0
+        
+        means1_256 = pred1_256['means']
+        means2_256 = pred2_256['means_in_other_view']
+
+        pred1_128['means'] = (means1_256[:,::2,::2,:] + means1_256[:,1::2,::2,:] + means1_256[:,::2,1::2,:] + means1_256[:,1::2,1::2,:]) / 4.0
+        pred2_128['means_in_other_view'] = (means2_256[:,::2,::2,:] + means2_256[:,1::2,::2,:] + means2_256[:,::2,1::2,:] + means2_256[:,1::2,1::2,:]) / 4.0
 
         if self.config.use_lod:
             # print(f"view1['original_img'].shape = {view1['original_img'].shape}")
@@ -154,23 +203,23 @@ class MAST3RGaussians(L.LightningModule):
 
             th_rgb = self.config.th_rgb
             th_depth = self.config.th_depth
-            mask1_lowres = torch.zeros((pred1["pts3d"].shape[0], H//2, W//2), dtype=torch.bool, device=device)
-            mask2_lowres = torch.zeros((pred2["pts3d"].shape[0], H//2, W//2), dtype=torch.bool, device=device)
+            mask1_256 = torch.zeros((pred1["pts3d"].shape[0], H//2, W//2), dtype=torch.bool, device=device)
+            mask2_256 = torch.zeros((pred2["pts3d"].shape[0], H//2, W//2), dtype=torch.bool, device=device)
             mask1 = torch.zeros((pred1["pts3d"].shape[0], H, W), dtype=torch.bool, device=device)
             mask2 = torch.zeros((pred2["pts3d"].shape[0], H, W), dtype=torch.bool, device=device)
             for b in range(pred1["pts3d"].shape[0]):
                 # print(f"batch {b}, pred1['pts3d'].shape = {pred1['pts3d'].shape}, pred1['means'].shape = {pred1['means'].shape} valid.shape = {valid.shape}")
-                mask1_lowres[b, ...], mask1[b, ...] =  lod_utils.get_mask(view1['original_img'][b, ...], pred1["pts3d"][b, ..., -1], valid[b, ...], device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+                mask1_256[b, ...], mask1[b, ...] =  lod_utils.get_mask(view1['original_img'][b, ...], pred1["pts3d"][b, ..., -1], valid[b, ...], device, H, W, th_depth=th_depth, th_rgb=th_rgb)
                 
-                # print(f"mask1_lowres.shape = {mask1_lowres.shape}, mask1.shape = {mask1.shape}")
-                # print(f"mask1_lowres[b, ...].shape = {mask1_lowres[b, ...].shape}, mask1[b, ...].shape = {mask1[b, ...].shape}")
+                # print(f"mask1_256.shape = {mask1_256.shape}, mask1.shape = {mask1.shape}")
+                # print(f"mask1_256[b, ...].shape = {mask1_256[b, ...].shape}, mask1[b, ...].shape = {mask1[b, ...].shape}")
 
-                mask2_lowres[b, ...] , mask2[b, ...] =  lod_utils.get_mask(view2['original_img'][b, ...], pred2["pts3d"][b, ..., -1], valid2[b, ...], device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+                mask2_256[b, ...] , mask2[b, ...] =  lod_utils.get_mask(view2['original_img'][b, ...], pred2["pts3d"][b, ..., -1], valid2[b, ...], device, H, W, th_depth=th_depth, th_rgb=th_rgb)
                 
-                # mask1_lowres[b, ...], mask1[b, ...] = lod_utils.get_mask(view1['original_img'][b, ...], pred1["pts3d"][b, ..., -1], valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
-                # mask2_lowres[b, ...], mask2[b, ...] = lod_utils.get_mask(view2['original_img'][b, ...], pred2["pts3d"][...,-1][b, ...], valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
-            pred1_combined = lod_utils.apply_mask_to_gaussians(pred1, pred1_lowres, mask1, mask1_lowres)
-            pred2_combined = lod_utils.apply_mask_to_gaussians(pred2, pred2_lowres, mask2, mask2_lowres)
+                # mask1_256[b, ...], mask1[b, ...] = lod_utils.get_mask(view1['original_img'][b, ...], pred1["pts3d"][b, ..., -1], valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+                # mask2_256[b, ...], mask2[b, ...] = lod_utils.get_mask(view2['original_img'][b, ...], pred2["pts3d"][...,-1][b, ...], valid, device, H, W, th_depth=th_depth, th_rgb=th_rgb)
+            pred1_combined = lod_utils.apply_mask_to_gaussians(pred1, pred1_256, mask1, mask1_256)
+            pred2_combined = lod_utils.apply_mask_to_gaussians(pred2, pred2_256, mask2, mask2_256)
             pred2_combined['means_in_other_view'] = pred2_combined.pop('means')
             pred1_combined['mask_highres'] = mask1
             pred2_combined['mask_highres'] = mask2
@@ -181,12 +230,15 @@ class MAST3RGaussians(L.LightningModule):
         # for key in pred2_combined.keys():
             # print(f"key. {key}, pred2_combined[key].shape = {pred2_combined[key].shape}")
         if self.config.use_lod:
-            # return pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined, pred2_combined
+            # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
             return pred1, pred2, pred1_combined, pred2_combined
+        elif self.config.resolution == 256:
+            return pred1, pred2, pred1_256, pred2_256
+        elif self.config.resolution == 128:
+            return pred1, pred2, pred1_128, pred2_128
         else:
-            return pred1, pred2, pred1_lowres, pred2_lowres
+            return pred1, pred2, pred1, pred2
         
-
     def training_step(self, batch, batch_idx):
         num_targets = len(batch['target'])
         # print(f"Training step {batch_idx}, len batch context {len(batch['context'])}, num targets: {num_targets}")
@@ -196,23 +248,23 @@ class MAST3RGaussians(L.LightningModule):
         view1, view2 = batch['context']
 
         # Predict using the encoder/decoder and calculate the loss
-        pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
-        if self.config.train_coarse:
-            color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
+        pred1, pred2, pred1_256, pred2_256 = self.forward(view1, view2)
+        if self.config.resolution < 500:
+            color, _ = self.decoder(batch, pred1_256, pred2_256, (h, w))
             # Calculate losses
             mask = loss_mask.calculate_loss_mask(batch)
             loss, mse, lpips, num_gaussians = self.calculate_loss(
-                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                batch, view1, view2, pred1_256, pred2_256, color, mask,
                 apply_mask=self.config.loss.apply_mask,
                 average_over_mask=self.config.loss.average_over_mask,
                 calculate_ssim=False
             )
         elif self.config.use_lod:
-            color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w), fused_gaussians=True)
+            color, _ = self.decoder(batch, pred1_256, pred2_256, (h, w), fused_gaussians=True)
             # Calculate losses
             mask = loss_mask.calculate_loss_mask(batch)
             loss, mse, lpips, num_gaussians = self.calculate_loss(
-                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                batch, view1, view2, pred1_256, pred2_256, color, mask,
                 apply_mask=self.config.loss.apply_mask,
                 average_over_mask=self.config.loss.average_over_mask,
                 calculate_ssim=False
@@ -241,23 +293,23 @@ class MAST3RGaussians(L.LightningModule):
         view1, view2 = batch['context']
         
         # Predict using the encoder/decoder and calculate the loss
-        pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
-        if self.config.train_coarse:
-            color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
+        pred1, pred2, pred1_256, pred2_256 = self.forward(view1, view2)
+        if self.config.resolution < 500:
+            color, _ = self.decoder(batch, pred1_256, pred2_256, (h, w))
             # Calculate losses
             mask = loss_mask.calculate_loss_mask(batch)
             loss, mse, lpips, num_gaussians = self.calculate_loss(
-                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                batch, view1, view2, pred1_256, pred2_256, color, mask,
                 apply_mask=self.config.loss.apply_mask,
                 average_over_mask=self.config.loss.average_over_mask,
                 calculate_ssim=False
             )
         elif self.config.use_lod:
-            color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w), fused_gaussians=True)
+            color, _ = self.decoder(batch, pred1_256, pred2_256, (h, w), fused_gaussians=True)
             # Calculate losses
             mask = loss_mask.calculate_loss_mask(batch)
             loss, mse, lpips, num_gaussians = self.calculate_loss(
-                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                batch, view1, view2, pred1_256, pred2_256, color, mask,
                 apply_mask=self.config.loss.apply_mask,
                 average_over_mask=self.config.loss.average_over_mask,
                 calculate_ssim=False
@@ -286,20 +338,20 @@ class MAST3RGaussians(L.LightningModule):
 
         # Predict using the encoder/decoder and calculate the loss
         with self.benchmarker.time("encoder"):
-            pred1, pred2, pred1_lowres, pred2_lowres = self.forward(view1, view2)
+            pred1, pred2, pred1_256, pred2_256 = self.forward(view1, view2)
         with self.benchmarker.time("decoder", num_calls=num_targets):
-            if self.config.train_coarse:
-                color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w))
+            if self.config.resolution < 500:
+                color, _ = self.decoder(batch, pred1_256, pred2_256, (h, w))
             elif self.config.use_lod:
-                color, _ = self.decoder(batch, pred1_lowres, pred2_lowres, (h, w), fused_gaussians=True)
+                color, _ = self.decoder(batch, pred1_256, pred2_256, (h, w), fused_gaussians=True)
             else:
                 color, _ = self.decoder(batch, pred1, pred2, (h, w))
         
-        if self.config.train_coarse or self.config.use_lod:
+        if self.config.resolution < 500 or self.config.use_lod:
             # Calculate losses
             mask = loss_mask.calculate_loss_mask(batch)
             loss, mse, lpips, ssim, num_gaussians = self.calculate_loss(
-                batch, view1, view2, pred1_lowres, pred2_lowres, color, mask,
+                batch, view1, view2, pred1_256, pred2_256, color, mask,
                 apply_mask=self.config.loss.apply_mask,
                 average_over_mask=self.config.loss.average_over_mask,
                 calculate_ssim=True
@@ -412,24 +464,31 @@ class MAST3RGaussians(L.LightningModule):
             },
         }
 
+    def load_gaussian_head_params(self, path):
+        gaussian_head_params = torch.load(path, map_location=self.device)
+        model_dict = self.state_dict()
+        
+        # Filter out unnecessary keys and update the model's state_dict
+        gaussian_head_params = {k: v for k, v in gaussian_head_params.items() if k in model_dict}
+        model_dict.update(gaussian_head_params)
+
+        # Load the updated state_dict into the model
+        self.load_state_dict(model_dict)
 
 def run_experiment(config):
 
     # Set the seed
     L.seed_everything(config.seed, workers=True)
 
-    if config.train_coarse:
-        print(f"Training Coarse Head")
+    print(f"Training {config.resolution} Head")
 
     # Set up loggers
     os.makedirs(os.path.join(config.save_dir, config.name), exist_ok=True)
     loggers = []
-    if config.train_coarse:
-        name_suffix = "_coarse"
-    elif config.use_lod:
+    if config.use_lod:
         name_suffix = "_lod"
     else:
-        name_suffix = ""
+        name_suffix = f"_{config.resolution}"
     name = config.name + name_suffix
     if config.loggers.use_csv_logger:
         csv_logger = L.pytorch.loggers.CSVLogger(
@@ -498,7 +557,7 @@ def run_experiment(config):
         alpha=0.5,
         beta=0.5,
         resolution=config.data.resolution,
-        use_every_n_sample=10,
+        use_every_n_sample=100,
     )
     data_loader_val = torch.utils.data.DataLoader(
         val_dataset,
@@ -509,7 +568,7 @@ def run_experiment(config):
 
     # Training
     print('Training')
-    coarse = "coarse" if config.train_coarse else ""
+    coarse = "coarse" if config.resolution < 500 else ""
     val_every_n_epochs = 1
     checkpoint_callback = ModelCheckpoint(
         dirpath=config.checkpoint_file_path, # <--- specify this on the trainer itself for version control
@@ -523,7 +582,7 @@ def run_experiment(config):
         benchmark=True,
         callbacks=[
             L.pytorch.callbacks.LearningRateMonitor(logging_interval='epoch', log_momentum=True),
-            export.SaveBatchData(save_dir=config.save_dir, coarse=config.train_coarse, lod=config.use_lod),
+            export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, lod=config.use_lod),
             checkpoint_callback
         ],
         check_val_every_n_epoch=1,
@@ -548,7 +607,7 @@ def run_experiment(config):
             alpha=alpha,
             beta=beta,
             resolution=config.data.resolution,
-            use_every_n_sample=10
+            use_every_n_sample=100
         )
         data_loader_test = torch.utils.data.DataLoader(
             test_dataset,
@@ -573,7 +632,7 @@ def run_experiment(config):
             trainer = L.Trainer(
                 accelerator="gpu",
                 benchmark=True,
-                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.train_coarse, lod=config.use_lod),],
+                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, lod=config.use_lod),],
                 default_root_dir=config.save_dir,
                 devices=config.devices,
                 log_every_n_steps=10,

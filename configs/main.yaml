@@ -15,17 +15,20 @@ loggers:
 # Model
 use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
-pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
+# pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
+pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
 checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
 
-grad_gaussian_dpt: True
-grad_gaussian_lowres_dpt: True
-use_lod: True
+grad_gaussian_dpt: False
+grad_gaussian_256_dpt: True
+grad_gaussian_128_dpt: False
+use_lod: False
 th_rgb: 0.3
 th_depth: 0.5
-train_coarse: False
+resolution: 256
 train_head_only: False
+use_calib: True
 
 # Data
 data:
@@ -33,7 +36,7 @@ data:
   batch_size: 1
   num_workers: 4
   resolution: [512, 512]
-  epochs_per_train_epoch: 4 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
+  epochs_per_train_epoch: 24 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
 
 # Optimization
 opt:
@@ -49,5 +52,5 @@ loss:
   apply_mask: True
   average_over_mask: True
 
-use_offsets: True
+use_offsets: False
 sh_degree: 1

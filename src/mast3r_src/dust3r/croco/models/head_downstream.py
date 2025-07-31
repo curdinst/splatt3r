@@ -24,7 +24,7 @@ class PixelwiseTaskWithDPT(nn.Module):
     """
 
     def __init__(self, *, hooks_idx=None, layer_dims=[96,192,384,768],
-                 output_width_ratio=1, num_channels=1, postprocess=None, lowres=False, **kwargs):
+                 output_width_ratio=1, num_channels=1, postprocess=None, resolution=512, **kwargs):
         super(PixelwiseTaskWithDPT, self).__init__()
         self.return_all_blocks = True # backbone needs to return all layers 
         self.postprocess = postprocess
@@ -32,7 +32,7 @@ class PixelwiseTaskWithDPT(nn.Module):
         self.num_channels = num_channels
         self.hooks_idx = hooks_idx
         self.layer_dims = layer_dims
-        self.lowres = lowres
+        self.resolution = resolution
     
     def setup(self, croconet):
         dpt_args = {'output_width_ratio': self.output_width_ratio, 'num_channels': self.num_channels}
@@ -47,7 +47,7 @@ class PixelwiseTaskWithDPT(nn.Module):
             print(f'  PixelwiseTaskWithDPT: automatically setting hook_idxs={self.hooks_idx}')
         dpt_args['hooks'] = self.hooks_idx
         dpt_args['layer_dims'] = self.layer_dims
-        dpt_args['lowres'] = self.lowres
+        dpt_args['resolution'] = self.resolution
         self.dpt = DPTOutputAdapter(**dpt_args)
         dim_tokens = [croconet.enc_embed_dim if hook<croconet.enc_depth else croconet.dec_embed_dim for hook in self.hooks_idx]
         dpt_init_args = {'dim_tokens_enc': dim_tokens}

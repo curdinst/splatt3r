@@ -72,7 +72,7 @@ class Cat_MLP_LocalFeatures_DPT_Pts3d(PixelwiseTaskWithDPT):
 
     def forward(self, decout, img_shape):
         # pass through the heads
-        pts3d, pts3d_lowres = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        pts3d, pts3d_256 = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
 
         # recover encoder and decoder outputs
         enc_output, dec_output = decout[0], decout[-1]
@@ -243,33 +243,57 @@ class GaussianHead(PixelwiseTaskWithDPT):
             )
             start_channels += out_channel
         # Low resolution Gaussian DPT -----------------------------------------------------------
-        self.gaussian_dpt_lowres = PixelwiseTaskWithDPT(
-            num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
-            dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, lowres=True
-        )
-        # print(f"self.gaussian_dpt: {self.gaussian_dpt_lowres}")
-        # print(f"self.gaussian_dpt.head: {self.gaussian_dpt_lowres.dpt.head}")
+        # 256x256 resolution
 
-        final_conv_layer_lowres = self.gaussian_dpt_lowres.dpt.head[-1]
-        splits_and_inits_lowres = [
+        self.gaussian_dpt_256 = PixelwiseTaskWithDPT(
+            num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
+            dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, resolution=256
+        )
+        
+        final_conv_layer_256 = self.gaussian_dpt_256.dpt.head[-1]
+        splits_and_inits_256 = [
             (3, 0.001, 0.001),  # 3D mean offsets
             (3, 0.00003, -7.0),  # Scales
             (4, 1.0, 0.0),  # Rotations
             (3 * sh_degree, 1.0, 0.0),  # Spherical Harmonics
             (1, 1.0, -2.0)  # Opacity
         ]
-        start_channels_lowres = 0
-        for out_channel, s, b in splits_and_inits_lowres:
+        start_channels_256 = 0
+        for out_channel, s, b in splits_and_inits_256:
             torch.nn.init.xavier_uniform_(
-                final_conv_layer_lowres.weight[start_channels_lowres:start_channels_lowres+out_channel, :, :, :],
+                final_conv_layer_256.weight[start_channels_256:start_channels_256+out_channel, :, :, :],
                 s
             )
             torch.nn.init.constant_(
-                final_conv_layer_lowres.bias[start_channels_lowres:start_channels_lowres+out_channel],
+                final_conv_layer_256.bias[start_channels_256:start_channels_256+out_channel],
                 b
             )
-            start_channels_lowres += out_channel
+            start_channels_256 += out_channel
         
+        # 128x128 resolution
+        self.gaussian_dpt_128 = PixelwiseTaskWithDPT(
+            num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
+            dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, resolution=128
+        )
+        final_conv_layer_128 = self.gaussian_dpt_256.dpt.head[-1]
+        splits_and_inits_128 = [
+            (3, 0.001, 0.001),  # 3D mean offsets
+            (3, 0.00003, -7.0),  # Scales
+            (4, 1.0, 0.0),  # Rotations
+            (3 * sh_degree, 1.0, 0.0),  # Spherical Harmonics
+            (1, 1.0, -2.0)  # Opacity
+        ]
+        start_channels_128 = 0
+        for out_channel, s, b in splits_and_inits_128:
+            torch.nn.init.xavier_uniform_(
+                final_conv_layer_128.weight[start_channels_128:start_channels_128+out_channel, :, :, :],
+                s
+            )
+            torch.nn.init.constant_(
+                final_conv_layer_128.bias[start_channels_128:start_channels_128+out_channel],
+                b
+            )
+            start_channels_128 += out_channel
         # ---------------------------------------------------------------------------------------
         self.use_offsets = use_offsets
         self.sh_degree = sh_degree
@@ -277,7 +301,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
 
     def forward(self, decout, img_shape):
         # pass through the heads
-        pts3d, pts3d_lowres = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        pts3d, pts3d_256 = self.dpt(decout, image_size=(img_shape[0], img_shape[1]))
 
         # recover encoder and decoder outputs
         enc_output, dec_output = decout[0], decout[-1]
@@ -292,18 +316,21 @@ class GaussianHead(PixelwiseTaskWithDPT):
 
         # extract gaussian_features
         gaussian_features, _ = self.gaussian_dpt.dpt(decout, image_size=(img_shape[0], img_shape[1]))
-        gaussian_features_lowres, _ = self.gaussian_dpt_lowres.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        gaussian_features_256, _ = self.gaussian_dpt_256.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        gaussian_features_128, _ = self.gaussian_dpt_128.dpt(decout, image_size=(img_shape[0], img_shape[1]))
         # gaussian_features = self.gaussian_local_features(cat_output)  # B,S,D
         # gaussian_features = gaussian_features.transpose(-1, -2).view(B, -1, H // self.patch_size, W // self.patch_size)
         # gaussian_features = F.pixel_shuffle(gaussian_features, self.patch_size)  # B,d,H,W
 
         # Average 3D points for low resolution
-        pts3d_lowres = (pts3d[:,:,::2,::2] + pts3d[:,:,1::2,::2] + pts3d[:,:,::2,1::2] + pts3d[:,:,1::2,1::2]) / 4.0
+        pts3d_256 = (pts3d[:,:,::2,::2] + pts3d[:,:,1::2,::2] + pts3d[:,:,::2,1::2] + pts3d[:,:,1::2,1::2]) / 4.0
 
+        pts3d_128 = (pts3d_256[:,:,::2,::2] + pts3d_256[:,:,1::2,::2] + pts3d_256[:,:,::2,1::2] + pts3d_256[:,:,1::2,1::2]) / 4.0
         # post process 3D pts, descriptors and confidences
         out = torch.cat([pts3d, local_features, gaussian_features], dim=1)
         # print(f"local features shape {local_features.shape}, gaussian features shape {gaussian_features.shape}")
-        out_lowres = torch.cat([pts3d_lowres, torch.zeros_like(local_features[...,:256,:256]), gaussian_features_lowres], dim=1)
+        out_256 = torch.cat([pts3d_256, torch.zeros_like(local_features[...,:256,:256]), gaussian_features_256], dim=1)
+        out_128 = torch.cat([pts3d_128, torch.zeros_like(local_features[...,:128,:128]), gaussian_features_128], dim=1)
         if self.postprocess:
             out = gaussian_postprocess(out,
                                    depth_mode=self.depth_mode,
@@ -314,7 +341,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
                                    desc_conf_mode=self.desc_conf_mode,
                                    use_offsets=self.use_offsets,
                                    sh_degree=self.sh_degree)
-            out_lowres = gaussian_postprocess(out_lowres,
+            out_256 = gaussian_postprocess(out_256,
                                    depth_mode=self.depth_mode,
                                    conf_mode=self.conf_mode,
                                    desc_dim=self.local_feat_dim,
@@ -323,7 +350,16 @@ class GaussianHead(PixelwiseTaskWithDPT):
                                    desc_conf_mode=self.desc_conf_mode,
                                    use_offsets=self.use_offsets,
                                    sh_degree=self.sh_degree)
-        return out, out_lowres
+            out_128 = gaussian_postprocess(out_128,
+                                      depth_mode=self.depth_mode,
+                                      conf_mode=self.conf_mode,
+                                      desc_dim=self.local_feat_dim,
+                                      desc_mode=self.desc_mode,
+                                      two_confs=self.two_confs,
+                                      desc_conf_mode=self.desc_conf_mode,
+                                      use_offsets=self.use_offsets,
+                                      sh_degree=self.sh_degree)
+        return out, out_256, out_128
 
 
 def mast3r_head_factory(head_type, output_mode, net, has_conf=False, use_offsets=False, sh_degree=1):
@@ -370,7 +406,7 @@ def mast3r_head_factory(head_type, output_mode, net, has_conf=False, use_offsets
                                                head_type='regression',
                                                use_offsets=use_offsets,
                                                sh_degree=sh_degree)
-    elif head_type == 'gaussian_head_lowres' and output_mode.startswith('pts3d+gaussian+desc'):
+    elif head_type == 'gaussian_head_256' and output_mode.startswith('pts3d+gaussian+desc'):
         local_feat_dim = int(output_mode[19:])
         assert net.dec_depth > 9
         l2 = net.dec_depth
@@ -391,7 +427,29 @@ def mast3r_head_factory(head_type, output_mode, net, has_conf=False, use_offsets
                                                head_type='regression',
                                                use_offsets=use_offsets,
                                                sh_degree=sh_degree,
-                                               lowres=True)
+                                               resolution=256)
+    elif head_type == 'gaussian_head_128' and output_mode.startswith('pts3d+gaussian+desc'):
+        local_feat_dim = int(output_mode[19:])
+        assert net.dec_depth > 9
+        l2 = net.dec_depth
+        feature_dim = 256
+        last_dim = feature_dim // 2
+        out_nchan = 3
+        ed = net.enc_embed_dim
+        dd = net.dec_embed_dim
+        return GaussianHead(net, local_feat_dim=local_feat_dim, has_conf=has_conf,
+                                               num_channels=out_nchan + has_conf,
+                                               feature_dim=feature_dim,
+                                               last_dim=last_dim,
+                                               hooks_idx=[0, l2 * 2 // 4, l2 * 3 // 4, l2],
+                                               dim_tokens=[ed, dd, dd, dd],
+                                               postprocess=postprocess,
+                                               depth_mode=net.depth_mode,
+                                               conf_mode=net.conf_mode,
+                                               head_type='regression',
+                                               use_offsets=use_offsets,
+                                               sh_degree=sh_degree,
+                                               resolution=128)
     else:
         raise NotImplementedError(
             f"unexpected {head_type=} and {output_mode=}")
