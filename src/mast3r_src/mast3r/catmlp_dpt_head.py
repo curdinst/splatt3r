@@ -217,11 +217,8 @@ class GaussianHead(PixelwiseTaskWithDPT):
         # print(f"PixelwiseTaskWithDPT: num_channels={gaussian_num_channels}, feature_dim={feature_dim}, last_dim={last_dim}, hooks_idx={hooks_idx},dim_tokens={dim_tokens}, depth_mode={depth_mode}, postprocess={postprocess}, conf_mode={conf_mode}, head_type={head_type}")
         self.gaussian_dpt = PixelwiseTaskWithDPT(
             num_channels=gaussian_num_channels, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
-            dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type, lowres=False
+            dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=postprocess, conf_mode=conf_mode, head_type=head_type
         )
-        
-        # print(f"self.gaussian_dpt: {self.gaussian_dpt}")
-        # print(f"self.gaussian_dpt.head: {self.gaussian_dpt.dpt.head}")
 
         final_conv_layer = self.gaussian_dpt.dpt.head[-1]
         splits_and_inits = [
@@ -295,6 +292,15 @@ class GaussianHead(PixelwiseTaskWithDPT):
             )
             start_channels_128 += out_channel
         # ---------------------------------------------------------------------------------------
+
+        # pixlewise classifier
+        num_coarseness_classes = 3  # only one class for coarseness
+        self.coarseness_classifier = PixelwiseTaskWithDPT(
+            num_channels=num_coarseness_classes, feature_dim=feature_dim, last_dim=last_dim, hooks_idx=hooks_idx,
+            dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=None, conf_mode=None, head_type='semseg'
+        )
+
+
         self.use_offsets = use_offsets
         self.sh_degree = sh_degree
 
@@ -318,10 +324,17 @@ class GaussianHead(PixelwiseTaskWithDPT):
         gaussian_features, _ = self.gaussian_dpt.dpt(decout, image_size=(img_shape[0], img_shape[1]))
         gaussian_features_256, _ = self.gaussian_dpt_256.dpt(decout, image_size=(img_shape[0], img_shape[1]))
         gaussian_features_128, _ = self.gaussian_dpt_128.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+
+        coarseness, _ = self.coarseness_classifier.dpt(decout, image_size=(img_shape[0], img_shape[1]))
+        final_conv_layer_coarseness = self.coarseness_classifier.dpt.head[-1]
+        print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum()}, {coarseness.sum(dim=1)}")
+        coarseness = F.softmax(coarseness, dim=1)  # B,C,H,W
+        print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum(dim=1).mean()}")
+
         # gaussian_features = self.gaussian_local_features(cat_output)  # B,S,D
         # gaussian_features = gaussian_features.transpose(-1, -2).view(B, -1, H // self.patch_size, W // self.patch_size)
         # gaussian_features = F.pixel_shuffle(gaussian_features, self.patch_size)  # B,d,H,W
-
+        
         # Average 3D points for low resolution
         pts3d_256 = (pts3d[:,:,::2,::2] + pts3d[:,:,1::2,::2] + pts3d[:,:,::2,1::2] + pts3d[:,:,1::2,1::2]) / 4.0
 
@@ -359,7 +372,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
                                       desc_conf_mode=self.desc_conf_mode,
                                       use_offsets=self.use_offsets,
                                       sh_degree=self.sh_degree)
-        return out, out_256, out_128
+        return out, out_256, out_128, coarseness
 
 
 def mast3r_head_factory(head_type, output_mode, net, has_conf=False, use_offsets=False, sh_degree=1):

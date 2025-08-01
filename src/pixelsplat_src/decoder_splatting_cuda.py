@@ -24,7 +24,7 @@ class DecoderSplattingCUDA(torch.nn.Module):
 
         extrinsics = torch.stack([target_view['camera_pose'] for target_view in batch['target']], dim=1)
         intrinsics = torch.stack([target_view['camera_intrinsics'] for target_view in batch['target']], dim=1)
-        print(f"inrinsics__: {intrinsics[0,0,0,0]}, {intrinsics[0,0,1,1]}, {intrinsics[0,0,0,2]}, {intrinsics[0,0,1,2]}")
+        # print(f"inrinsics__: {intrinsics[0,0,0,0]}, {intrinsics[0,0,1,1]}, {intrinsics[0,0,0,2]}, {intrinsics[0,0,1,2]}")
 
         intrinsics = normalize_intrinsics(intrinsics, image_shape)[..., :3, :3]
 

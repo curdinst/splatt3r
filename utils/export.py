@@ -17,13 +17,14 @@ class SaveBatchData(L.Callback):
     '''A Lightning callback that occasionally saves batch inputs and outputs to disk.
     It is not critical to the training process, and can be disabled if unwanted.'''
 
-    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, lod=False):
+    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, lod=False, train_coarse_prediction=False):
         self.save_dir = save_dir
         self.train_save_interval = train_save_interval
         self.val_save_interval = val_save_interval
         self.test_save_interval = test_save_interval
         self.coarse = coarse
         self.lod = lod
+        self.train_coarse_prediction = train_coarse_prediction
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx % self.train_save_interval == 0 and trainer.global_rank == 0:
@@ -40,24 +41,49 @@ class SaveBatchData(L.Callback):
     def save_batch_data(self, prefix, trainer, pl_module, batch, batch_idx):
 
         print(f'Saving {prefix} data at epoch {trainer.current_epoch} and batch {batch_idx}')
+        if self.train_coarse_prediction:
+            # Run the batch through the model again
+            _, _, h, w = batch["context"][0]["img"].shape
+            view1, view2 = batch['context']
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = pl_module.forward(view1, view2)
+            pred1_coarseness, pred2_coarseness = {}, {} 
+            for key in ["opacities", "rotations", "scales", "covariances"]:
+                pred1_coarseness[key] = pred1_512[key].clone().requires_grad_(False)
+                pred2_coarseness[key] = pred2_512[key].clone().requires_grad_(False)
+            pred1_coarseness['means'] = pred1_512['means'].clone().requires_grad_(False)
+            pred2_coarseness['means_in_other_view'] = pred2_512['means_in_other_view'].clone().requires_grad_(False)
+            print(f"shape sh = {pred1_512['sh'].shape}, {pred2_512['sh'].shape}")
+            print(f"shape coarseness1 = {coarseness1.shape}, coarseness2 = {coarseness2.shape}")
+            pred1_coarseness['sh'] = einops.rearrange(coarseness1, "b c h w -> b h w c 1" )
+            pred2_coarseness['sh'] = einops.rearrange(coarseness2, "b c h w -> b h w c 1" )
+            coarseness_image, depth = pl_module.decoder(batch, pred1_coarseness, pred2_coarseness, (h, w)) # gets (b, v, c, h, w)
+            mask = loss_mask.calculate_loss_mask(batch)
 
-        # Run the batch through the model again
-        _, _, h, w = batch["context"][0]["img"].shape
-        view1, view2 = batch['context']
-        pred1, pred2, pred1_lowres, pred2_lowres = pl_module.forward(view1, view2)
-        if self.coarse or self.lod:
-            pred1, pred2 = pred1_lowres, pred2_lowres
-        
-        color, depth = pl_module.decoder(batch, pred1, pred2, (h, w), fused_gaussians=self.lod)
-        
-        mask = loss_mask.calculate_loss_mask(batch)
+            # Save the data
+            save_dir = os.path.join(
+                self.save_dir,
+                f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
+            )
+            log_batch_files_coarseness_pred(batch, coarseness_image, depth, mask, view1, view2, pred1_512, pred2_512, save_dir, lod=self.lod)
+            
+        else:
+            # Run the batch through the model again
+            _, _, h, w = batch["context"][0]["img"].shape
+            view1, view2 = batch['context']
+            pred1, pred2, pred1_lowres, pred2_lowres, _, _, _, _ = pl_module.forward(view1, view2)
+            if self.coarse or self.lod:
+                pred1, pred2 = pred1_lowres, pred2_lowres
+            
+            color, depth = pl_module.decoder(batch, pred1, pred2, (h, w), fused_gaussians=self.lod)
+            
+            mask = loss_mask.calculate_loss_mask(batch)
 
-        # Save the data
-        save_dir = os.path.join(
-            self.save_dir,
-            f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
-        )
-        log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, lod=self.lod)
+            # Save the data
+            save_dir = os.path.join(
+                self.save_dir,
+                f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
+            )
+            log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, lod=self.lod)
 
 
 def save_as_ply(pred1, pred2, save_path, as_list=False, lod=True):
@@ -209,6 +235,70 @@ def save_3d(view1, view2, pred1, pred2, save_dir, as_pointcloud=True, all_points
 
 @torch.no_grad()
 def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False, lod=False):
+    '''Save all the relevant debug files for a batch'''
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save the 3D Gaussians as a .ply file
+    # save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), lod=lod)
+
+    # Save the 3D points as a point cloud and as a mesh (disabled)
+    if should_save_3d:
+        save_3d(view1, view2, pred1, pred2, os.path.join(save_dir, "3d_mesh"), as_pointcloud=False)
+        save_3d(view1, view2, pred1, pred2, os.path.join(save_dir, "3d_pointcloud"), as_pointcloud=True)
+
+    # Save the color, depth and valid masks for the input context images
+    context_images = torch.stack([view["img"] for view in batch["context"]], dim=1)
+    context_original_images = torch.stack([view["original_img"] for view in batch["context"]], dim=1)
+    context_depthmaps = torch.stack([view["depthmap"] for view in batch["context"]], dim=1)
+    context_valid_masks = torch.stack([view["valid_mask"] for view in batch["context"]], dim=1)
+
+    if "mask_highres" in pred1.keys():
+        # print(f"saving mask")
+        # print(f"context_images.shape: {context_original_images.shape}")
+        # print(f"pred1['mask_highres'].shape: {pred1['mask_highres'].shape}")
+        # print(f"pred2['mask_highres'].shape: {pred2['mask_highres'].shape}")
+        context_images_lod_masked = context_original_images.clone()
+        context_images_lod_masked[:,0,:,pred1['mask_highres'][0,...]] = 0.0
+        context_images_lod_masked[:,1,:,pred2['mask_highres'][0,...]] = 0.0
+    for b in range(min(context_images.shape[0], 4)):
+        torchvision.utils.save_image(context_images[b], os.path.join(save_dir, f"sample_{b}_img_context.jpg"))
+        torchvision.utils.save_image(context_original_images[b], os.path.join(save_dir, f"sample_{b}_original_img_context.jpg"))
+        torchvision.utils.save_image(context_depthmaps[b, :, None, ...], os.path.join(save_dir, f"sample_{b}_depthmap.jpg"), normalize=True)
+        torchvision.utils.save_image(context_valid_masks[b, :, None, ...].float(), os.path.join(save_dir, f"sample_{b}_valid_mask_context.jpg"), normalize=True)
+        if "mask_highres" in pred1.keys():
+            torchvision.utils.save_image(context_images_lod_masked[b].float(), os.path.join(save_dir, f"sample_{b}_LoD_mask_context.jpg"), normalize=True)
+
+    # Save the color and depth images for the target images
+    target_original_images = torch.stack([view["original_img"] for view in batch["target"]], dim=1)
+    target_depthmaps = torch.stack([view["depthmap"] for view in batch["target"]], dim=1)
+    context_valid_masks = torch.stack([view["valid_mask"] for view in batch["context"]], dim=1)
+    for b in range(min(target_original_images.shape[0], 4)):
+        torchvision.utils.save_image(target_original_images[b], os.path.join(save_dir, f"sample_{b}_original_img_target.jpg"))
+        torchvision.utils.save_image(target_depthmaps[b, :, None, ...], os.path.join(save_dir, f"sample_{b}_depthmap_target.jpg"), normalize=True)
+
+    # Save the rendered images and depths
+    for b in range(min(color.shape[0], 4)):
+        torchvision.utils.save_image(color[b, ...], os.path.join(save_dir, f"sample_{b}_rendered_color.jpg"))
+    if depth is not None:
+        for b in range(min(color.shape[0], 4)):
+            torchvision.utils.save_image(depth[b, :, None, ...], os.path.join(save_dir, f"sample_{b}_rendered_depth.jpg"), normalize=True)
+
+    # Save the loss masks
+    for b in range(min(mask.shape[0], 4)):
+        torchvision.utils.save_image(mask[b, :, None, ...].float(), os.path.join(save_dir, f"sample_{b}_loss_mask.jpg"), normalize=True)
+
+    # Save the masked target and rendered images
+    target_original_images = torch.stack([view["original_img"] for view in batch["target"]], dim=1)
+    masked_target_original_images = target_original_images * mask[..., None, :, :]
+    masked_predictions = color * mask[..., None, :, :]
+    for b in range(min(target_original_images.shape[0], 4)):
+        torchvision.utils.save_image(masked_target_original_images[b], os.path.join(save_dir, f"sample_{b}_masked_original_img_target.jpg"))
+        torchvision.utils.save_image(masked_predictions[b], os.path.join(save_dir, f"sample_{b}_masked_rendered_color.jpg"))
+
+
+@torch.no_grad()
+def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False, lod=False):
     '''Save all the relevant debug files for a batch'''
 
     os.makedirs(save_dir, exist_ok=True)
