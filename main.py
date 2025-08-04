@@ -100,7 +100,7 @@ class MAST3RGaussians(L.LightningModule):
             self.encoder.downstream_head2.requires_grad_(True)
 
         if self.config.train_coarseness_prediction:
-            self.crossentropy_criterion = torch.nn.CrossEntropyLoss(reduction='none')
+            self.crossentropy_criterion = torch.nn.CrossEntropyLoss(reduction="none") # reduction='none'
 
         self.save_hyperparameters()
 
@@ -268,11 +268,11 @@ class MAST3RGaussians(L.LightningModule):
     def training_step(self, batch, batch_idx):
         num_targets = len(batch['target'])
         # print(f"Training step {batch_idx}, len batch context {len(batch['context'])}, num targets: {num_targets}")
-        print(f"Training scene {batch['scene']}, step {batch_idx}")
+        # print(f"Training scene {batch['scene']}, step {batch_idx}")
         # print(f"Training step {batch_idx}, batch size: {len(batch['context'])}")
         _, _, h, w = batch["context"][0]["img"].shape
         view1, view2 = batch['context']
-        if self.config.train_coarseness_prediction:
+        if self.config.train_coarseness_prediction and not self.config.train_coarseness_prediction_img_grad:
             # Predict using the encoder/decoder and calculate the loss
             pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = self.forward(view1, view2)
             with torch.no_grad():
@@ -285,17 +285,17 @@ class MAST3RGaussians(L.LightningModule):
                 pred2_coarseness[key] = pred2_512[key].clone().requires_grad_(False)
             pred1_coarseness['means'] = pred1_512['means'].clone().requires_grad_(False)
             pred2_coarseness['means_in_other_view'] = pred2_512['means_in_other_view'].clone().requires_grad_(False)
-            print(f"shape sh = {pred1_512['sh'].shape}, {pred2_512['sh'].shape}")
-            print(f"shape coarseness1 = {coarseness1.shape}, coarseness2 = {coarseness2.shape}")
-            pred1_coarseness['sh'] = einops.rearrange(coarseness1, "b c h w -> b h w c 1" )
-            pred2_coarseness['sh'] = einops.rearrange(coarseness2, "b c h w -> b h w c 1" )
+            # print(f"shape sh = {pred1_512['sh'].shape}, {pred2_512['sh'].shape}")
+            # print(f"shape coarseness1 = {coarseness1.shape}, coarseness2 = {coarseness2.shape}")
+            pred1_coarseness['sh'] = einops.rearrange(coarseness1, "b c h w -> b h w c 1" ).requires_grad_(True)
+            pred2_coarseness['sh'] = einops.rearrange(coarseness2, "b c h w -> b h w c 1" ).requires_grad_(True)
 
             coarseness_image, _ = self.decoder(batch, pred1_coarseness, pred2_coarseness, (h, w)) # gets (b, v, c, h, w)
             # coarseness_image, _ = self.decoder(batch, pred1_512, pred2_512, (h, w))
 
-            print(f"coarseness_image.shape = {coarseness_image.shape}, pred1_coarseness['sh'].shape = {pred1_coarseness['sh'].shape}, pred2_coarseness['sh'].shape = {pred2_coarseness['sh'].shape}")
+            # print(f"coarseness_image.shape = {coarseness_image.shape}, pred1_coarseness['sh'].shape = {pred1_coarseness['sh'].shape}, pred2_coarseness['sh'].shape = {pred2_coarseness['sh'].shape}")
             mask = loss_mask.calculate_loss_mask(batch)
-            print(f"coarseness_image: {coarseness_image}")
+            # print(f"coarseness_image: {coarseness_image}")
             
             loss, num_gaussians = self.calculate_loss_3stage(batch, view1, view2,
                                        (pred1_512, pred1_256, pred1_128),
@@ -312,7 +312,33 @@ class MAST3RGaussians(L.LightningModule):
             # )
             self.log_metrics('train', loss, mse=0, lpips=0, num_gaussians=num_gaussians, train_coarseness_prediction=True)
             return loss
+        elif self.config.train_coarseness_prediction_img_grad:
+            # Predict using the encoder/decoder and calculate the loss
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = self.forward(view1, view2)
+            confidence_threshold = 1.5
+            valid1 = (pred1_512["conf"] > confidence_threshold)
+            valid2 = (pred1_512["conf"] > confidence_threshold)
+            coarseness_gt_1, coarseness_onehot_1 = lod_utils.get_3_stage_mask(view1['original_img'][0, ...], pred1_512["pts3d"][0, ..., -1], valid1[0, ...], self.device, 512, 512, th_depth=config.th_depth, th_rgb=config.th_rgb)
+            coarseness_gt_2, _ = lod_utils.get_3_stage_mask(view2['original_img'][0, ...], pred1_512["pts3d"][0, ..., -1], valid2[0, ...], self.device, 512, 512, th_depth=config.th_depth, th_rgb=config.th_rgb)
+            # coarseness_gt_1.shape:  (1, 512, 512)
+            # coarseness_gt_1 = coarseness_gt_1.unsqueeze(0) # add batch dimension (1,3, H, W)
+            # coarseness_gt_2 = coarseness_gt_2.unsqueeze(0) # add batch dimension (1,3, H, W)
+            print(f"coarseness_gt_1.shape = {coarseness_gt_1.shape}, coarseness1.shape = {coarseness1.shape}")
 
+            weights = (512.0*512.0)/coarseness_onehot_1.sum(dim=(1,2))
+            weights_normalized = weights / torch.linalg.norm(weights)
+            print(f"weights: {weights}")
+            self.crossentropy_criterion = torch.nn.CrossEntropyLoss(reduction="none", weight=weights_normalized) # reduction='none'
+            classification_loss = self.crossentropy_criterion(coarseness1, coarseness_gt_1) # (b, v, h, w)
+            print(f"classification_loss: {classification_loss.shape}")
+            loss = classification_loss.mean()
+            print(f"loss: {loss}")
+            # print(f"mask.shape: {mask.shape}, mask.sum(): {mask.sum()}")
+            # mask = loss_mask.calculate_loss_mask(batch)
+            # classification_loss = (classification_loss * mask).sum() / mask.sum()
+            self.log_metrics('train', loss, mse=0, lpips=0, num_gaussians=0, train_coarseness_prediction=True)
+            return loss
+        
         elif self.config.use_lod or self.config.coarseness_predictions:
             # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
             pred1_combined, pred2_combined = self.forward(view1, view2)
@@ -363,7 +389,7 @@ class MAST3RGaussians(L.LightningModule):
         view1, view2 = batch['context']
         
         # Predict using the encoder/decoder and calculate the loss
-        if self.config.train_coarseness_prediction:
+        if self.config.train_coarseness_prediction and not config.train_coarseness_prediction_img_grad:
             # Predict using the encoder/decoder and calculate the loss
             pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = self.forward(view1, view2)
             with torch.no_grad():
@@ -378,12 +404,12 @@ class MAST3RGaussians(L.LightningModule):
             pred1_coarseness['means'] = pred1_512['means'].clone().requires_grad_(False)
             pred2_coarseness['means_in_other_view'] = pred2_512['means_in_other_view'].clone().requires_grad_(False)
             print(f"pred1_coarseness['means'].shape = {pred1_coarseness['means'].shape}, pred2_coarseness['means_in_other_view'].shape = {pred2_coarseness['means_in_other_view'].shape}")
-            pred1_coarseness['sh'] = einops.rearrange(coarseness1, "b c h w -> b h w c 1" ).requires_grad_(True)
-            pred2_coarseness['sh'] = einops.rearrange(coarseness2, "b c h w -> b h w c 1" ).requires_grad_(True)
-
-            coarseness_image, _ = self.decoder(batch, pred1_coarseness, pred2_coarseness, (h, w)) # gets (b, v, c, h, w)
-            print(f"coarseness_image: {coarseness_image}")
-            print(f"color_512: {color_512}")
+            pred1_coarseness['sh'] = einops.rearrange(coarseness1, "b c h w -> b h w c 1" ).requires_grad_(False)
+            pred2_coarseness['sh'] = einops.rearrange(coarseness2, "b c h w -> b h w c 1" ).requires_grad_(False)
+            with torch.no_grad():
+                coarseness_image, _ = self.decoder(batch, pred1_coarseness, pred2_coarseness, (h, w)) # gets (b, v, c, h, w)
+            # print(f"coarseness_image: {coarseness_image}")
+            # print(f"color_512: {color_512}")
             print(f"coarseness_image.shape = {coarseness_image.shape}, pred1_coarseness['sh'].shape = {pred1_coarseness['sh'].shape}, pred2_coarseness['sh'].shape = {pred2_coarseness['sh'].shape}")
             mask = loss_mask.calculate_loss_mask(batch)
             loss, num_gaussians = self.calculate_loss_3stage(batch, view1, view2,
@@ -401,7 +427,30 @@ class MAST3RGaussians(L.LightningModule):
             # )
             self.log_metrics('val', loss, mse=0, lpips=0, num_gaussians=num_gaussians, train_coarseness_prediction=True)
             return loss
-
+        elif self.config.train_coarseness_prediction_img_grad:
+            # Predict using the encoder/decoder and calculate the loss
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = self.forward(view1, view2)
+            confidence_threshold = 1.5
+            valid1 = (pred1_512["conf"] > confidence_threshold)
+            valid2 = (pred1_512["conf"] > confidence_threshold)
+            coarseness_gt_1, coarseness_onehot_1 = lod_utils.get_3_stage_mask(view1['original_img'][0, ...], pred1_512["pts3d"][0, ..., -1], valid1[0, ...], self.device, 512, 512, th_depth=config.th_depth, th_rgb=config.th_rgb)
+            coarseness_gt_2, _ = lod_utils.get_3_stage_mask(view2['original_img'][0, ...], pred1_512["pts3d"][0, ..., -1], valid2[0, ...], self.device, 512, 512, th_depth=config.th_depth, th_rgb=config.th_rgb)
+            # coarseness_gt_1.shape:  (1, 512, 512)
+            # coarseness_gt_1 = coarseness_gt_1.unsqueeze(0) # add batch dimension (1,3, H, W)
+            # coarseness_gt_2 = coarseness_gt_2.unsqueeze(0) # add batch dimension (1,3, H, W)
+            print(f"coarseness_gt_1.shape = {coarseness_gt_1.shape}, coarseness1.shape = {coarseness1.shape}")
+            weights = (512.0*512.0)/coarseness_onehot_1.sum(dim=(1,2))
+            weights_normalized = weights / torch.linalg.norm(weights)
+            print(f"weights: {weights}")
+            self.crossentropy_criterion = torch.nn.CrossEntropyLoss(reduction="none", weight=weights_normalized) # reduction='none'
+            classification_loss = self.crossentropy_criterion(coarseness1, coarseness_gt_1) # (b, v, h, w)
+            # print(f"classification_loss: {classification_loss}, {classification_loss.shape}")
+            # print(f"mask.shape: {mask.shape}, mask.sum(): {mask.sum()}")
+            mask = loss_mask.calculate_loss_mask(batch)
+            classification_loss = (classification_loss * mask).sum() / mask.sum()
+            self.log_metrics('val', classification_loss, mse=0, lpips=0, num_gaussians=0, train_coarseness_prediction=True)
+            return classification_loss
+        
         elif self.config.use_lod or self.config.coarseness_predictions:
             # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
             pred1_combined, pred2_combined = self.forward(view1, view2)
@@ -499,9 +548,9 @@ class MAST3RGaussians(L.LightningModule):
         # else:
         #     num_gaussians = pred1['sh'].shape[1]*pred1['sh'].shape[2] + pred2['sh'].shape[1]*pred2['sh'].shape[2]
         coarseness_image_empty = coarsenesses_image.mean(dim=2) # (b, v, h, w)
-        mask_coarseness_render = torch.ones_like(coarseness_image_empty)
-        mask_coarseness_render[coarseness_image_empty == 0] = 0 # (b, v, h, w)
-        mask = mask * mask_coarseness_render
+        # mask_coarseness_render = torch.ones_like(coarseness_image_empty)
+        # mask_coarseness_render[coarseness_image_empty == 0] = 0 # (b, v, h, w)
+        # mask = mask * mask_coarseness_render
         if apply_mask:
             if mask.sum() < 1:
                 print(f"Skipping batch due to no valid pixels in the mask! batch['scene_id'] = {batch['scene']}")
@@ -534,8 +583,11 @@ class MAST3RGaussians(L.LightningModule):
         rgb_l2_loss_128 = rgb_l2_loss_128.mean(dim=2) # (b, v, c, h, w) -> (b, v, h, w)
         print(f"rgb_l2_loss_512 shape: {rgb_l2_loss_512.shape}, rgb_l2_loss_256 shape: {rgb_l2_loss_256.shape}, rgb_l2_loss_128 shape: {rgb_l2_loss_128.shape}")
         rgb_l2_losses = torch.stack([rgb_l2_loss_512, rgb_l2_loss_256, rgb_l2_loss_128], dim=2) # (b, v, 3, h, w)
-        coarseness_gt = torch.zeros_like(rgb_l2_losses)
-        coarseness_gt.scatter_(2, torch.argmin(rgb_l2_losses, dim=2, keepdim=True), 1) # (b, v, 3, h, w)
+        # coarseness_gt = torch.zeros_like(rgb_l2_losses)
+        # coarseness_gt.scatter_(2, torch.argmin(rgb_l2_losses, dim=2, keepdim=True), 1) # (b, v, 3, h, w)
+        coarseness_gt = torch.argmin(rgb_l2_losses, dim=2) # (b, v, h, w)
+        # coarseness_gt = coarseness_gt.squeeze(1) # (b, h, w)
+        
         print(f"rgb_l2_losses: {rgb_l2_losses.shape}")
 
         # coarsenesses_image: # (b, v, c, h, w)
@@ -546,14 +598,22 @@ class MAST3RGaussians(L.LightningModule):
         # coarseness_gt = torch.zeros_like(rgb_l2_losses)
         # coarseness_gt[torch.argmin(rgb_l2_losses, dim=2)[:, None, ...]] = 1.0
         # coarseness_gt = torch.argmin(rgb_l2_losses, dim=2)
-        # coarseness_gt = einops.rearrange(coarseness_gt, 'b v c h w -> b v h w c')
+        coarseness_gt = einops.rearrange(coarseness_gt, 'b v h w -> (b v) h w')
         print(f"coarseness_gt: {coarseness_gt.shape}, ")
+        coarsenesses_image = einops.rearrange(coarsenesses_image, 'b v c h w -> (b v) c h w')
         print(f"coarsenesses_image: {coarsenesses_image.shape}, ")
-        print(f"")
         # print(f"coarseness_image: \n \n {coarsenesses_image}")
         # print(f"coarseness_gt: \n \n {coarseness_gt}")
         # coarsenesses_image = torch.softmax(coarsenesses_image, dim=2) # (b, v, c, h, w)
-        print("means of coarseness images: ", coarsenesses_image.mean(), coarseness_gt.mean())
+        print("means of coarseness images: ", coarsenesses_image.mean())
+
+        one_hot_labels = torch.nn.functional.one_hot(coarseness_gt, num_classes=3)
+
+        # The one-hot encoding creates a new dimension at the *end*, so we permute it
+        # to match the standard PyTorch format [N, C, H, W].
+        # one_hot_labels_permuted = one_hot_labels.permute(0, 1, 4, 2, 3).float()
+        # one_hot_labels_permuted = einops.rearrange(one_hot_labels, 'b v h w c -> (b v) c h w')
+        # print(f"\nOne-hot encoded labels shape: {one_hot_labels_permuted.shape}")
         classification_loss = self.crossentropy_criterion(coarsenesses_image, coarseness_gt) # (b, v, h, w)
         # print(f"classification_loss: {classification_loss}, {classification_loss.shape}")
         # print(f"mask.shape: {mask.shape}, mask.sum(): {mask.sum()}")
@@ -562,7 +622,7 @@ class MAST3RGaussians(L.LightningModule):
             classification_loss = (classification_loss * mask).sum() / mask.sum()
         else:
             classification_loss = classification_loss.mean()
-
+        del predicted_color_512, predicted_color_256, predicted_color_128, pred1, pred2
         print(f"classification_loss: {classification_loss}")
         return classification_loss, num_gaussians
         # if average_over_mask:
@@ -816,20 +876,21 @@ def run_experiment(config):
         callbacks=[
             L.pytorch.callbacks.LearningRateMonitor(logging_interval='epoch', log_momentum=True),
             export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, lod=config.use_lod, train_coarse_prediction=config.train_coarseness_prediction),
-            # checkpoint_callback
+            checkpoint_callback
         ],
-        check_val_every_n_epoch=1,
+        check_val_every_n_epoch=3,
         default_root_dir=config.save_dir,
         devices=config.devices,
         gradient_clip_val=config.opt.gradient_clip_val,
-        log_every_n_steps=10,
+        log_every_n_steps=1, # 10
         logger=loggers,
         max_epochs=config.opt.epochs,
         profiler=profiler,
         strategy="ddp_find_unused_parameters_true" if len(config.devices) > 1 else "auto",
+        # overfit_batches=1,
+        # enable_checkpointing=False
     )
-    # trainer.validate(model, dataloaders=data_loader_train)
-    assert False, "crossentropyloss doesnt work on validation data, check for NaNs or sth"
+    # trainer.validate(model, dataloaders=data_loader_val)
     trainer.fit(model, train_dataloaders=data_loader_train, val_dataloaders=data_loader_val)
 
     # Testing

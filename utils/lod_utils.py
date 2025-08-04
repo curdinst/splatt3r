@@ -111,6 +111,91 @@ def get_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
     # print("mask_downsampled.shape :", mask_downsampled.shape, "mask_upsampled.shape:", mask_upsampled.shape)
     return mask_downsampled.squeeze(0).squeeze(0), ~mask_upsampled.squeeze(0).squeeze(0)  # Returns (H//2, W//2) and (H, W) masks
 
+def get_3_stage_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
+    """
+    img (torch.Tensor): Image tensor of shape (C, H, W)
+    depth_img (torch.Tensor): Depth image tensor of shape (H, W)
+    valid (torch.Tensor): Validity mask tensor of shape (H*W,)
+    device (str): Device to perform computations on, e.g., "cuda:0" or "cpu"
+    H (int): Height of the image
+    W (int): Width of the image
+    th_rgb (float, float): Threshold for RGB gradients
+    th_depth (float, float): Threshold for depth gradients    
+
+
+    Returns:
+        mask_upsampled Bool tensor of shape (H, W) indicating valid pixels with original resolution
+        mask_downsampled Bool tensor of shape (H//2, W//2) indicating valid pixels with downsampled resolution
+    """
+
+    grad_x, grad_y = spatial_derivative(img, device)
+    grad_x, grad_y = torch.abs(grad_x), torch.abs(grad_y)
+    # print(grad_x.shape, grad_y.shape)
+    depth_grad_x, depth_grad_y = spatial_derivative(depth_img.unsqueeze(0), device)
+    depth_grad_x, depth_grad_y = torch.abs(depth_grad_x), torch.abs(depth_grad_y)
+    # print(f"depth_grad_x shape: {depth_grad_x.shape}, depth_grad_y shape: {depth_grad_y.shape}")
+    # print(f"max depth_grad_x: {depth_grad_x.max()}, min depth_grad_x: {depth_grad_x.min()}")
+    # print(f"max depth_grad_y: {depth_grad_y.max()}, min depth_grad_y: {depth_grad_y.min()}")
+
+    # print("Gradient x max:", grad_x.max(), "min:", grad_x.min())
+    # print("Gradient y max:", grad_y.max(), "min:", grad_y.min())
+
+    grad_x_max, grad_x_max_indices = torch.max(grad_x, dim=0)
+    grad_y_max, grad_y_max_indices = torch.max(grad_y, dim=0)
+    
+    th_rgb_low, th_rgb_high = th_rgb
+    th_depth_low, th_depth_high = th_depth
+
+    mask_x_high = grad_x_max < th_rgb_high
+    mask_y_high = grad_y_max < th_rgb_high
+    depth_mask_x = depth_grad_x.squeeze(0) < th_depth_high
+    depth_mask_y = depth_grad_y.squeeze(0) < th_depth_high
+
+    mask_x_low = grad_x_max < th_rgb_low
+    mask_y_low = grad_y_max < th_rgb_low
+    depth_mask_x_low = depth_grad_x.squeeze(0) < th_depth_low
+    depth_mask_y_low = depth_grad_y.squeeze(0) < th_depth_low
+
+    # print(f"mask_x shape: {mask_x.shape}, mask_y shape: {mask_y.shape}")
+    # print(f"depth_mask_x shape: {depth_mask_x.shape}, depth_mask_y shape: {depth_mask_y.shape}")
+    if len(valid.shape) == 1:
+        valid_rearranged = einops.rearrange(valid, "(h w) -> h w", h=H, w=W)
+    else:
+        valid_rearranged = valid
+    # print(f"valid_rearranged shape: {valid_rearranged.shape}")
+    mask_high = mask_x_high & mask_y_high & depth_mask_x & depth_mask_y & valid_rearranged
+
+    mask_low = mask_x_low & mask_y_low & depth_mask_x_low & depth_mask_y_low & valid_rearranged
+
+    mask_128 = mask_low
+    mask_256 = mask_high & ~mask_low
+    mask_512 = ~mask_high & ~mask_low
+    print(f"mask_128.shape : {mask_128.shape}, mask_256.shape: {mask_256.shape}, mask_512.shape: {mask_512.shape}")
+    corseness_classes = torch.zeros((1, H, W), device=device, dtype=torch.long) # (1, H, W)
+    corseness_classes[0, mask_128] = 2
+    corseness_classes[0, mask_256] = 1
+    corseness_classes[0, mask_512] = 0
+
+    one_hot_mask = torch.stack([mask_512, mask_256, mask_128], dim=0)  # (3, H, W)
+    return corseness_classes, one_hot_mask # Returns (1, H, W) mask with 3 stages: 512, 256, 128 AND a one_hot_mask with (3, H, W)
+
+    # coarseness_image = torch.stack([mask_512, mask_256, mask_128], dim=0)  # (3, H, W)
+    # return coarseness_image # Returns (3, H, W) mask with 3 stages: 512, 256, 128
+
+    # print("Mask shape:", mask.shape)
+    # print(f"mask.sum(): {mask.sum()}, mask.numel(): {mask.numel()}, mask.sum()/mask.numel(): {mask.sum()/mask.numel()}")
+    # print(H,W, "Downsampled mask shape:", mask.shape)
+
+    # H_mask, W_mask = H // 2, W // 2
+    # # mask_downsampled = F.upsample(mask.float().unsqueeze(0), size=(H_mask,W_mask), mode="bilinear")
+    # mask_downsampled = F.interpolate(mask_high.unsqueeze(0).unsqueeze(0).float(), size=(H_mask, W_mask), mode="bilinear")
+    # # print("Downsampled mask shape:", mask_downsampled.shape)
+    # mask_downsampled = (mask_downsampled > 0.9)
+    # # print("Downsampled mask sum:", mask_downsampled.sum(), "numel:", mask_downsampled.numel(), "ratio:", mask_downsampled.sum()/mask_downsampled.numel())
+    # mask_upsampled = F.interpolate(mask_downsampled.float(), size=(H, W), mode="nearest").squeeze(0).squeeze(0).bool()
+    # # print("mask_downsampled.shape :", mask_downsampled.shape, "mask_upsampled.shape:", mask_upsampled.shape)
+    # return mask_downsampled.squeeze(0).squeeze(0), ~mask_upsampled.squeeze(0).squeeze(0)  # Returns (H//2, W//2) and (H, W) masks
+
 def apply_mask_to_gaussians(pred, pred_lowres, mask, mask_lowres):
     """
     Apply a mask to the predicted Gaussian parameters.

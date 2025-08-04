@@ -10,7 +10,7 @@ devices: [0]
 use_profiler: False
 loggers:
   use_csv_logger: True
-  use_wandb: False
+  use_wandb: True
 
 # Model
 use_pretrained: True
@@ -29,10 +29,11 @@ grad_gaussian_128_dpt: False
 grad_coarseness_prediction: True
 coarseness_predictions: False
 train_coarseness_prediction: True
+train_coarseness_prediction_img_grad: True
 
 use_lod: False
-th_rgb: 0.3
-th_depth: 0.5
+th_rgb: [0.1, 0.3]
+th_depth: [0.2, 0.5]
 resolution: 512
 train_head_only: False
 use_calib: True
@@ -41,14 +42,14 @@ use_calib: True
 data:
   root: '/mnt/buzz_newhd/home/v4rl/scannetpp-dataset/'
   batch_size: 1
-  num_workers: 4
+  num_workers: 0
   resolution: [512, 512]
-  epochs_per_train_epoch: 1 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
+  epochs_per_train_epoch: 24 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
 
 # Optimization
 opt:
-  epochs: 10 #5 # 20
-  lr: 0.00001
+  epochs: 5 #5 # 20
+  lr: 0.00001 #0.00001
   weight_decay: 0.05
   gradient_clip_val: 0.5
 

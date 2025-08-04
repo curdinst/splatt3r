@@ -300,10 +300,8 @@ class GaussianHead(PixelwiseTaskWithDPT):
             dim_tokens=dim_tokens, depth_mode=depth_mode, postprocess=None, conf_mode=None, head_type='semseg'
         )
 
-
         self.use_offsets = use_offsets
         self.sh_degree = sh_degree
-
 
     def forward(self, decout, img_shape):
         # pass through the heads
@@ -328,7 +326,7 @@ class GaussianHead(PixelwiseTaskWithDPT):
         coarseness, _ = self.coarseness_classifier.dpt(decout, image_size=(img_shape[0], img_shape[1]))
         final_conv_layer_coarseness = self.coarseness_classifier.dpt.head[-1]
         print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum()}, {coarseness.sum(dim=1)}")
-        coarseness = F.softmax(coarseness, dim=1)  # B,C,H,W
+        # coarseness = F.softmax(coarseness, dim=1)  # B,C,H,W
         print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum(dim=1).mean()}")
 
         # gaussian_features = self.gaussian_local_features(cat_output)  # B,S,D

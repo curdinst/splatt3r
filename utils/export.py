@@ -8,6 +8,7 @@ import torch
 import torchvision
 import trimesh
 import lightning as L
+import utils.lod_utils as lod_utils
 
 import utils.loss_mask as loss_mask
 from src.mast3r_src.dust3r.dust3r.viz import OPENGL, pts3d_to_trimesh, cat_meshes
@@ -45,6 +46,47 @@ class SaveBatchData(L.Callback):
             # Run the batch through the model again
             _, _, h, w = batch["context"][0]["img"].shape
             view1, view2 = batch['context']
+            target_views = batch['target']
+
+            # with torch.no_grad():
+            #     color_512, _ = pl_module.decoder(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
+            #     color_256, _ = pl_module.decoder(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
+            #     color_128, _ = pl_module.decoder(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
+
+            # if apply_mask:
+            #     if mask.sum() < 1:
+            #         print(f"Skipping batch due to no valid pixels in the mask! batch['scene_id'] = {batch['scene']}")
+            #         zero_loss = torch.tensor(0.0, device=target_color.device, requires_grad=True)
+            #         if calculate_ssim:
+            #             return zero_loss, zero_loss, zero_loss, zero_loss
+            #         return zero_loss, zero_loss, zero_loss, 0
+            #     target_color = target_color * mask[..., None, :, :]
+            #     predicted_color_512 = predicted_color_512 * mask[..., None, :, :] 
+            #     predicted_color_256 = predicted_color_256 * mask[..., None, :, :] 
+            #     predicted_color_128 = predicted_color_128 * mask[..., None, :, :] 
+            # if predicted_color_512.shape[1] != target_color.shape[1]:
+            #     print(f"Warning: predicted_color.shape[1] ({predicted_color.shape[1]}) != target_color.shape[1] ({target_color.shape[1]}), reshaping predicted_color")
+            #     predicted_color = predicted_color[:, :target_color.shape[1], ...]
+            # print(f"target_color.shape (b v c h w): {target_color.shape}, predicted_color.shape: {predicted_color.shape}, mask.shape: {mask.shape}")
+            # flattened_color_512 = einops.rearrange(predicted_color_512, 'b v c h w -> (b v) c h w')
+            # flattened_color_256 = einops.rearrange(predicted_color_256, 'b v c h w -> (b v) c h w')
+            # flattened_color_128 = einops.rearrange(predicted_color_128, 'b v c h w -> (b v) c h w')
+            # flattened_target_color = einops.rearrange(target_color, 'b v c h w -> (b v) c h w')
+            # flattened_mask = einops.rearrange(mask, 'b v h w -> (b v) h w')
+
+            # # MSE loss
+            # rgb_l2_loss_512 = ((color_512 - target_color) ** 2)
+            # rgb_l2_loss_256 = ((color_256 - target_color) ** 2)
+            # rgb_l2_loss_128 = ((color_128 - target_color) ** 2)
+            # rgb_l2_loss_512 = rgb_l2_loss_512.mean(dim=2) # (b, v, c, h, w) -> (b, v, h, w)
+            # rgb_l2_loss_256 = rgb_l2_loss_256.mean(dim=2) # (b, v, c, h, w) -> (b, v, h, w)
+            # rgb_l2_loss_128 = rgb_l2_loss_128.mean(dim=2) # (b, v, c, h, w) -> (b, v, h, w)
+            # print(f"rgb_l2_loss_512 shape: {rgb_l2_loss_512.shape}, rgb_l2_loss_256 shape: {rgb_l2_loss_256.shape}, rgb_l2_loss_128 shape: {rgb_l2_loss_128.shape}")
+            # rgb_l2_losses = torch.stack([rgb_l2_loss_512, rgb_l2_loss_256, rgb_l2_loss_128], dim=2) # (b, v, 3, h, w)
+            # coarseness_gt = torch.zeros_like(rgb_l2_losses)
+            # coarseness_gt.scatter_(2, torch.argmin(rgb_l2_losses, dim=2, keepdim=True), 1) # (b, v, 3, h, w)
+
+
             pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = pl_module.forward(view1, view2)
             pred1_coarseness, pred2_coarseness = {}, {} 
             for key in ["opacities", "rotations", "scales", "covariances"]:
@@ -64,7 +106,7 @@ class SaveBatchData(L.Callback):
                 self.save_dir,
                 f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
             )
-            log_batch_files_coarseness_pred(batch, coarseness_image, depth, mask, view1, view2, pred1_512, pred2_512, save_dir, lod=self.lod)
+            log_batch_files_coarseness_pred(batch, coarseness_image, depth, mask, view1, view2, pred1_512, pred2_512, coarseness1, coarseness2, save_dir, lod=self.lod, pl_module=pl_module)
             
         else:
             # Run the batch through the model again
@@ -298,7 +340,7 @@ def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_
 
 
 @torch.no_grad()
-def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False, lod=False):
+def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pred1, pred2, coarseness1, coarseness2, save_dir, should_save_3d=False, lod=False, pl_module=None):
     '''Save all the relevant debug files for a batch'''
 
     os.makedirs(save_dir, exist_ok=True)
@@ -317,6 +359,34 @@ def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pre
     context_depthmaps = torch.stack([view["depthmap"] for view in batch["context"]], dim=1)
     context_valid_masks = torch.stack([view["valid_mask"] for view in batch["context"]], dim=1)
 
+    confidence_threshold = 1.5
+    valid = (pred1["conf"] > confidence_threshold)
+    b=0
+    coarseness_mask, one_hot_mask = lod_utils.get_3_stage_mask(view1['original_img'][0, ...], pred1['pts3d'][b, ..., -1], valid[0, ...], "cuda:0", 512, 512, [0.1, 0.3], [0.2, 0.5])
+    # coarseness_mask = coarseness_mask.float()/2.0
+    print(f"coarseness_mask.shape: {coarseness_mask.shape}, coarseness_mask.min(): {coarseness_mask.min()}, coarseness_mask.max(): {coarseness_mask.max()}")
+    # coarseness_gt = torch.zeros((3,512,512), dtype=torch.float32, device=coarseness_mask.device)
+    # coarseness_gt.scatter_(0, torch.argmin(coarseness_mask, dim=2, keepdim=True), 1) # (b, v, 3, h, w)
+    coarseness_gt = one_hot_mask.float()
+    # coarseness_gt = einops.rearrange(coarseness_gt, "c h w -> h w c")
+    print(f"coarseness_gt.shape: {coarseness_gt.shape}, coarseness_gt.min(): {coarseness_gt.min()}, coarseness_gt.max(): {coarseness_gt.max()}")
+    print(f"coarseness_gt: {coarseness_gt}")
+    coarseness_pred_one_hot = torch.zeros_like(coarseness1)
+    print(f"coarseness1.shape: {coarseness1.shape}, coarseness1.min(): {coarseness1.min()}, coarseness1.max(): {coarseness1.max()}")
+    # coarseness_pred_one_hot[torch.argmin(coarseness1, dim=1, keepdim=True)] = 1.0
+    
+    argmax = torch.argmax(torch.softmax(coarseness1, dim=1), dim=1, keepdim=True)
+    print(f"argmax shape: {argmax.shape}, argmax min: {torch.min(argmax)}, argmax max: {torch.max(argmax)}, mean: {torch.mean(argmax.float())}")
+    coarseness_pred_one_hot.scatter_(1, argmax, 1.0) # (b, v, 3, h, w)
+    # print(f"coarseness_pred_one_hot: {coarseness_pred_one_hot}")
+    coarseness_onehot_1 = one_hot_mask
+    weights = (512.0*512.0)/coarseness_onehot_1.sum(dim=(1,2))
+    weights_normalized = weights / torch.linalg.norm(weights)
+    print(f"weights: {weights}")
+    crossentropy_criterion = torch.nn.CrossEntropyLoss(reduction="none", weight=weights_normalized) # reduction='none'
+    crossentropy_loss = crossentropy_criterion(coarseness1, coarseness_gt.unsqueeze(0))
+    print(f"crossentropy_loss: {crossentropy_loss.shape}")
+
     if "mask_highres" in pred1.keys():
         # print(f"saving mask")
         # print(f"context_images.shape: {context_original_images.shape}")
@@ -330,6 +400,10 @@ def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pre
         torchvision.utils.save_image(context_original_images[b], os.path.join(save_dir, f"sample_{b}_original_img_context.jpg"))
         torchvision.utils.save_image(context_depthmaps[b, :, None, ...], os.path.join(save_dir, f"sample_{b}_depthmap.jpg"), normalize=True)
         torchvision.utils.save_image(context_valid_masks[b, :, None, ...].float(), os.path.join(save_dir, f"sample_{b}_valid_mask_context.jpg"), normalize=True)
+        
+        torchvision.utils.save_image(coarseness_pred_one_hot[b, ...], os.path.join(save_dir, f"sample_{b}_coarseness1.jpg"), normalize=True)
+        torchvision.utils.save_image(coarseness_gt, os.path.join(save_dir, f"sample_{b}_coarseness_mask.jpg"), normalize=True)
+        torchvision.utils.save_image(crossentropy_loss, os.path.join(save_dir, f"sample_{b}_crossentropyloss.jpg"), normalize=True)
         if "mask_highres" in pred1.keys():
             torchvision.utils.save_image(context_images_lod_masked[b].float(), os.path.join(save_dir, f"sample_{b}_LoD_mask_context.jpg"), normalize=True)
 
