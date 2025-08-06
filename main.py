@@ -1075,6 +1075,8 @@ def run_experiment(config):
     # Testing
     original_save_dir = config.save_dir
     results = {}
+
+    return
     for alpha, beta in ((0.9, 0.9), (0.7, 0.7), (0.5, 0.5), (0.3, 0.3)):
 
         test_dataset = scannetpp.get_scannet_test_dataset(
