@@ -18,7 +18,7 @@ use_pretrained: True
 # pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
 # pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
 # pretrained_mast3r_path: './checkpoints/splatt3r_coarse3_stage_256.ckpt'
-pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse_256_128.ckpt'
+pretrained_mast3r_path: './checkpoints/keep/splatt3r_3stage_freq_pred.ckpt'
 
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
 checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
@@ -29,14 +29,17 @@ grad_gaussian_128_dpt: False
 grad_coarseness_prediction: True
 coarseness_predictions: False
 train_coarseness_prediction: True
-train_coarseness_prediction_img_grad: True
+train_coarseness_prediction_img_grad: False
+
+mse_penalty_512: 0.01
+mse_penalty_256: 0.005
 
 use_lod: False
 th_rgb: [0.1, 0.3]
 th_depth: [0.2, 0.5]
 resolution: 512
 train_head_only: False
-use_calib: True
+use_calib_and_gt_depth: True
 
 # Data
 data:
@@ -44,7 +47,7 @@ data:
   batch_size: 1
   num_workers: 0
   resolution: [512, 512]
-  epochs_per_train_epoch: 24 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
+  epochs_per_train_epoch: 12 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
 
 # Optimization
 opt:
@@ -59,6 +62,7 @@ loss:
   mast3r_loss_weight: Null
   apply_mask: True
   average_over_mask: True
+  mast3r_confidence_threshold: 1.5
 
 use_offsets: False
 sh_degree: 1

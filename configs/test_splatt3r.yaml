@@ -15,7 +15,9 @@ loggers:
 # Model
 use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
-pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
+# pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
+pretrained_mast3r_path: './checkpoints/splatt3r_3stage_1ep.ckpt'
+
 # pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=02_batch1_v2.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=07_head_only.ckpt'
@@ -24,6 +26,10 @@ pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
 grad_gaussian_dpt: False
 grad_gaussian_256_dpt: False
 grad_gaussian_128_dpt: False
+grad_coarseness_prediction: False
+coarseness_predictions: False
+train_coarseness_prediction: False
+train_coarseness_prediction_img_grad: False
 use_lod: False
 th_rgb: 0.3
 th_depth: 0.5

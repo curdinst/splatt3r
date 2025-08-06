@@ -324,10 +324,10 @@ class GaussianHead(PixelwiseTaskWithDPT):
         gaussian_features_128, _ = self.gaussian_dpt_128.dpt(decout, image_size=(img_shape[0], img_shape[1]))
 
         coarseness, _ = self.coarseness_classifier.dpt(decout, image_size=(img_shape[0], img_shape[1]))
-        final_conv_layer_coarseness = self.coarseness_classifier.dpt.head[-1]
-        print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum()}, {coarseness.sum(dim=1)}")
+        # final_conv_layer_coarseness = self.coarseness_classifier.dpt.head[-1]
+        # print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum()}, {coarseness.sum(dim=1)}")
         # coarseness = F.softmax(coarseness, dim=1)  # B,C,H,W
-        print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum(dim=1).mean()}")
+        # print(f"coarseness.shape 1234 {coarseness.shape} sum {coarseness.sum(dim=1).mean()}")
 
         # gaussian_features = self.gaussian_local_features(cat_output)  # B,S,D
         # gaussian_features = gaussian_features.transpose(-1, -2).view(B, -1, H // self.patch_size, W // self.patch_size)
