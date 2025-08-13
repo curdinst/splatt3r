@@ -8,3 +8,4 @@ data/scannetpp/coverage*
 results/
 __pycache__/
 output.txt
+mask*.png

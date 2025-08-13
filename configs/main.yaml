@@ -10,15 +10,20 @@ devices: [0]
 use_profiler: False
 loggers:
   use_csv_logger: True
-  use_wandb: True
+  use_wandb: False
 
 # Model
 use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
 # pretrained_mast3r_path: './pretrained/splatt3r_coarse.ckpt'
 # pretrained_mast3r_path: './pretrained/splatt3r_3stage.ckpt'
-# pretrained_mast3r_path: './checkpoints/splatt3r_coarse3_stage_256.ckpt'
-pretrained_mast3r_path: './checkpoints/keep/splatt3r_3stage_freq_pred.ckpt'
+# pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse_256_128.ckpt'
+# pretrained_mast3r_path: './checkpoints/keep/25-08-06-12-31-28_epoch=04_step=13620.ckpt'
+# pretrained_mast3r_path: './checkpoints/keep/25-08-07-11-44-51_epoch=15_step=65376.ckpt' # used to train coarsenesspred
+pretrained_mast3r_path: './checkpoints/keep/25-08-11-20-19-28_epoch=15_step=65376.ckpt' 
+
+
+# pretrained_mast3r_path: './checkpoints/keep/splatt3r_3stage_freq_pred.ckpt'
 
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
 checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
@@ -26,13 +31,16 @@ checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
 grad_gaussian_dpt: False
 grad_gaussian_256_dpt: False
 grad_gaussian_128_dpt: False
-grad_coarseness_prediction: True
-coarseness_predictions: False
-train_coarseness_prediction: True
+
+grad_coarseness_prediction: False
+coarseness_predictions: True
+train_coarseness_prediction: False
 train_coarseness_prediction_img_grad: False
 
-mse_penalty_512: 0.01
-mse_penalty_256: 0.005
+train_3stage_gaussian_heads: False
+
+mse_penalty_512: 0.05
+mse_penalty_256: 0.025
 
 use_lod: False
 th_rgb: [0.1, 0.3]
@@ -45,14 +53,14 @@ use_calib_and_gt_depth: True
 data:
   root: '/mnt/buzz_newhd/home/v4rl/scannetpp-dataset/'
   batch_size: 1
-  num_workers: 0
+  num_workers: 4
   resolution: [512, 512]
-  epochs_per_train_epoch: 12 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
+  epochs_per_train_epoch: 18 #12 #50 #10 #100 # How many times to sample from each scene each training epoch (helps avoid unnecessary Pytorch Lightning overhead)
 
 # Optimization
 opt:
-  epochs: 5 #5 # 20
-  lr: 0.00001 #0.00001
+  epochs: 20 #5 # 20
+  lr: 0.00001
   weight_decay: 0.05
   gradient_clip_val: 0.5
 

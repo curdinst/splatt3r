@@ -28,6 +28,7 @@ import utils.lod_utils as lod_utils
 import workspace
 from lightning.pytorch.callbacks import ModelCheckpoint
 from utils.mast3r_slam_geometry import constrain_points_to_ray, depth_map_to_points
+import torchvision
 
 class MAST3RGaussians(L.LightningModule):
 
@@ -283,28 +284,96 @@ class MAST3RGaussians(L.LightningModule):
             pred2_combined['mask_highres'] = mask2
 
         if self.config.coarseness_predictions:
-            
-            predicted_classes = ((pred1_512, pred1_256, pred1_128, coarseness1, None), (pred2_512, pred2_256, pred2_128, coarseness2, None))
+            pred1_combined, pred2_combined = {}, {}
+            predicted_classes = ((pred1_512, pred1_256, pred1_128, coarseness1, pred1_combined), (pred2_512, pred2_256, pred2_128, coarseness2, pred2_combined))
             for pred, pred_256, pred_128, coarseness, pred_combined in predicted_classes:
-                classes = torch.argmax(coarseness, dim=-1)
-                mask_256 = torch.logical_and(classes[:,::2,::2], classes[:,1::2,::2], classes[:,::2,1::2], classes[:,1::2,1::2])
-                mask_128 = torch.logical_and(mask1_256[:,::2,::2], mask1_256[:,1::2,::2], mask1_256[:,::2,1::2], mask1_256[:,1::2,1::2])
-                mask_128_upsampled_256 =  torch.nn.functional.interpolate(mask_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                mask_256 = mask_256 and not mask_128_upsampled_256
-                mask_256_upsampled_512 = torch.nn.functional.interpolate(mask_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                mask_512 = not mask_256_upsampled_512
+                classes = torch.argmax(coarseness, dim=1) # coarseness: (b, c, h, w) -> classes: (b, h, w)
+                # print(f"calasses.shape: {classes.shape}, coarseness.shape: {coarseness.shape}")
+                mask_512_use = (classes == 0) & pred['depth_mask']
+                mask_256_use = (classes == 1) & pred['depth_mask']
+                mask_128_use = (classes == 2) & pred['depth_mask']
+
+                # Save mask_512_use as an image
+                # torchvision.utils.save_image(mask_512_use.float(), f"mask_512_use.png")
+                # torchvision.utils.save_image(mask_256_use.float(), f"mask_256_use.png")
+                # torchvision.utils.save_image(mask_128_use.float(), f"mask_128_use.png")
+                mask_256_xor = mask_256_use[:,::2,::2] ^ mask_256_use[:,1::2,::2] ^ mask_256_use[:,::2,1::2] ^ mask_256_use[:,1::2,1::2]
+                mask_256_use_256 = mask_256_use[:,::2,::2] & mask_256_use[:,1::2,::2] & mask_256_use[:,::2,1::2] & mask_256_use[:,1::2,1::2]
+                
+                mask_256_xor_512 = torch.nn.functional.interpolate(mask_256_xor.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # print(f"mask_128_use.shape 1: {mask_128_use.shape}")
+                mask_128_xor_256 = mask_128_use[:,::2,::2] ^ mask_128_use[:,1::2,::2] ^ mask_128_use[:,::2,1::2] ^ mask_128_use[:,1::2,1::2]
+                mask_128_use_256 = mask_128_use[:,::2,::2] & mask_128_use[:,1::2,::2] & mask_128_use[:,::2,1::2] & mask_128_use[:,1::2,1::2]
+                # print(f"mask_128_use.shape 2: {mask_128_use.shape}")
+                mask_128_xor_128 = mask_128_use_256[:,::2,::2] ^ mask_128_use_256[:,1::2,::2] ^ mask_128_use_256[:,::2,1::2] ^ mask_128_use_256[:,1::2,1::2]
+                mask_128_use_128 = mask_128_use_256[:,::2,::2] & mask_128_use_256[:,1::2,::2] & mask_128_use_256[:,::2,1::2] & mask_128_use_256[:,1::2,1::2]
+                # print(f"mask_128_use.shape 3: {mask_128_use_256.shape}")
+                # print(f"mask_128_xor_256.shape: {mask_128_xor_256.shape}, mask_128_xor_128.shape: {mask_128_xor_128.shape}, mask_256_xor_512.shape: {mask_256_xor_512.shape}")
+                # mask_128_xor_256_512 = torch.nn.functional.interpolate(mask_128_xor_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # mask_128_xor_128_256 = torch.nn.functional.interpolate(mask_128_xor_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # print(f"mask_128_xor_128_256.shape: {mask_128_xor_128_256.shape}, mask_128_xor_256_512.shape: {mask_128_xor_256_512.shape}, mask_256_xor_512.shape: {mask_256_xor_512.shape}")
+
+
+                # mask_128_use_128 to use on 128 resolution
+                mask_128_use_128_upsampled_256 = torch.nn.functional.interpolate(mask_128_use_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                mask_128_to_256 = mask_128_use_256 & ~mask_128_use_128_upsampled_256
+                mask_256_use_256 = mask_256_use_256 | mask_128_to_256
+
+                mask_128_use_256_upsampled_512 = torch.nn.functional.interpolate(mask_128_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                mask_128_to_512 = mask_128_use & ~mask_128_use_256_upsampled_512
+
+                mask_128_upsampled_256 = torch.nn.functional.interpolate(mask_128_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # mask_256_use_256 = mask_256_use_256 | mask_128_xor_128_256
+                mask_256_upsampled_512 = torch.nn.functional.interpolate(mask_256_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                mask_256_to_512 = mask_256_use & ~mask_256_upsampled_512
+                mask_512_use = mask_512_use | mask_256_to_512 | mask_128_to_512
+
+                # torchvision.utils.save_image(mask_512_use.float(), f"mask_512_use_1.png")
+                # torchvision.utils.save_image(mask_256_use_256.float(), f"mask_256_use_256_1.png")
+                # torchvision.utils.save_image(mask_128_use.float(), f"mask_128_use_1.png")
+
+                # mask_256_use_upsampled = torch.nn.functional.interpolate(mask_256_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # mask_128_use_upsampled = torch.nn.functional.interpolate(mask_128_use_128.float().unsqueeze(1), scale_factor=4, mode='nearest').squeeze(1).bool()
+                # torchvision.utils.save_image(mask_256_use_upsampled.float(), f"mask_256_use_upsampled.png")
+                # torchvision.utils.save_image(mask_128_use_upsampled.float(), f"mask_128_use_upsampled.png")
+
+                # colorimg = torch.stack([mask_512_use.float(), mask_256_use_upsampled.float(), mask_128_use_upsampled.float()], dim=1) # (3, h, w)
+                # torchvision.utils.save_image(colorimg, f"mask_combined.png")
+
+                
+
+                # mask_256 = classes[:,::2,::2] & classes[:,1::2,::2] & classes[:,::2,1::2] & classes[:,1::2,1::2]
+                # mask_128 = mask_256[:,::2,::2] & mask_256[:,1::2,::2] & mask_256[:,::2,1::2] & mask_256[:,1::2,1::2]
+                # mask_128_upsampled_256 =  torch.nn.functional.interpolate(mask_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # mask_256 = mask_256 & ~mask_128_upsampled_256
+                # mask_256_upsampled_512 = torch.nn.functional.interpolate(mask_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # mask_512 = ~ mask_256_upsampled_512
+
+                # mask_512_use = (mask_512 == 0)
+                # mask_256_use = (mask_256 == 1)
+                # mask_128_use = (mask_128 == 2)
+                # print(f"mask_128_use.shape: {mask_128_use.shape}, mask_256_use.shape: {mask_256_use.shape}, mask_512_use.shape: {mask_512_use.shape}")
+                # print(f"pred_128['means'].shape: {pred_128['means'].shape}, pred_256['means'].shape: {pred_256['means'].shape}, pred_512['means'].shape: {pred['means'].shape}")
+                # print(f"mask_512.shape: {mask_512.shape}, mask_256.shape: {mask_256.shape}, mask_128.shape: {mask_128.shape}")
                 for key in pred.keys():
-                    if key not in ["means", "opacities", "sh", "rotations", "scales", "covariances"]:
+                    if key not in ["means", "means_in_other_view", "opacities", "sh", "rotations", "scales", "covariances"]:
                         continue
                     tensor_list = []
-                    for b in range(pred["means"].shape[0]):
-                        # print(f"fusing key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
-                        tensor_list.append(torch.cat([pred[key][b,mask_512[b,...],...], 
-                                                      pred_256[key][b,mask_256[b,...],...], 
-                                                      pred_128[b,mask_512[b,...]]]
-                                                      , dim=0))
-                    pred_combined[key] = torch.stack(tensor_list, dim=0)
-                
+                    # for b in range(pred["means"].shape[0]):
+                    #     # print(f"fusing key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
+                    #     tensor_list.append(torch.cat([pred[key][b,mask_512_use[b,...],...], 
+                    #                                   pred_256[key][b,mask_256_use[b,...],...], 
+                    #                                   pred_128[key][b,mask_128_use[b,...],...]]
+                    #                                   , dim=0))
+                    # pred_combined[key] = torch.stack(tensor_list, dim=0)
+                    b=0
+                    pred_combined[key] = torch.cat([pred[key][b,mask_512_use[b,...],...], 
+                                                      pred_256[key][b,mask_256_use_256[b,...],...], 
+                                                      pred_128[key][b,mask_128_use_128[b,...],...]]
+                                                      , dim=0)
+                    pred_combined[key] = pred_combined[key].unsqueeze(0) # add batch dimension
+            # pred2_combined['means_in_other_view'] = pred2_combined.pop('means')
+            # pred2_combined['pts3d_in_other_view'] = pred2_combined.pop('pts3d')
 
         # Update the keys to make clear that pts3d and means are in view1's frame
         # pred2_512['pts3d_in_other_view'] = pred2_512.pop('pts3d')
@@ -317,13 +386,13 @@ class MAST3RGaussians(L.LightningModule):
             # return pred1_512, pred2_512, pred1_256, pred2_256, pred1_combined, pred2_combined
             return pred1_combined, pred2_combined
         else:
-            return pred1_512, pred2_512, pred1_512, pred2_512, pred1_128, pred2_128
+            return pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128
         
     def training_step(self, batch, batch_idx):
-        device = torch.device('cuda:0')
-        free, total = torch.cuda.mem_get_info(device)
-        mem_used_MB = (total - free) / 1024 ** 2
-        print("mem_used_MB:", mem_used_MB)
+        # device = torch.device('cuda:0')
+        # free, total = torch.cuda.mem_get_info(device)
+        # mem_used_MB = (total - free) / 1024 ** 2
+        # print("mem_used_MB:", mem_used_MB)
         num_targets = len(batch['target'])
         # print(f"Training step {batch_idx}, len batch context {len(batch['context'])}, num targets: {num_targets}")
         print(f"Training scene {batch['scene']}, step {batch_idx}")
@@ -356,7 +425,7 @@ class MAST3RGaussians(L.LightningModule):
 
             free, total = torch.cuda.mem_get_info(self.device0)
             mem_used_MB = (total - free) / 1024 ** 2
-            if mem_used_MB > 10000:
+            if mem_used_MB > 11000:
                 print(f"Memory usage is too high: {mem_used_MB} MB, clearing cache")
                 torch.cuda.empty_cache()
             # color_512.to(self.device1)
@@ -454,6 +523,50 @@ class MAST3RGaussians(L.LightningModule):
             self.log_metrics('train', loss, mse=0, lpips=0, num_gaussians=0, train_coarseness_prediction=True)
             return loss
         
+        elif self.config.train_3stage_gaussian_heads:
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128 = self.forward(view1, view2)
+
+            color_512, _ = self.decoder_512(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
+            color_256, _ = self.decoder_256(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
+            color_128, _ = self.decoder_128(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss_512, mse_512, lpips_512, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_512, pred2_512, color_512, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_256, mse_256, lpips_256, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_256, pred2_256, color_256, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_128, mse_128, lpips_128, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_128, pred2_128, color_128, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss = (loss_512, loss_256, loss_128)
+            mse = (mse_512, mse_256, mse_128)
+            lpips = (lpips_512, lpips_256, lpips_128)
+            self.log_metrics('train', loss, mse, lpips, num_gaussians=num_gaussians)
+            loss = (loss_512 + loss_256 + loss_128) / 3.0
+            return loss
+        
+        elif self.config.use_lod or self.config.coarseness_predictions:
+            # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
+            pred1_combined, pred2_combined = self.forward(view1, view2)
+
+            color,_ = self.decoder_512(batch, pred1_combined, pred2_combined, (h, w), fused_gaussians=True) # gets (b, v, c, h, w)
+            mask = loss_mask.calculate_loss_mask(batch)
+
+            loss, mse, lpips, num_gaussians = self.calculate_loss(batch, view1, view2, pred1_combined, pred2_combined, color, mask)
+            self.log_metrics('train', loss, mse, lpips, num_gaussians=num_gaussians)
+            return loss
+
         # elif self.config.use_lod or self.config.coarseness_predictions:
         #     # return pred1_512, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
         #     pred1_combined, pred2_combined = self.forward(view1, view2)
@@ -535,10 +648,51 @@ class MAST3RGaussians(L.LightningModule):
             loss = self.calculate_loss_coarseness_img_freq(view1, view2, pred1_512, pred2_512, coarseness1, coarseness2)
             self.log_metrics('val', loss=loss, mse=0, lpips=0, num_gaussians=0, train_coarseness_prediction=True)
             return loss
-        
-        # elif self.config.use_lod or self.config.coarseness_predictions:
-        #     # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
-        #     pred1_combined, pred2_combined = self.forward(view1, view2)
+        elif self.config.train_3stage_gaussian_heads:
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128 = self.forward(view1, view2)
+
+            color_512, _ = self.decoder_512(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
+            color_256, _ = self.decoder_256(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
+            color_128, _ = self.decoder_128(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            loss_512, mse_512, lpips_512, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_512, pred2_512, color_512, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_256, mse_256, lpips_256, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_256, pred2_256, color_256, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_128, mse_128, lpips_128, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_128, pred2_128, color_128, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss = (loss_512, loss_256, loss_128)
+            mse = (mse_512, mse_256, mse_128)
+            lpips = (lpips_512, lpips_256, lpips_128)
+            self.log_metrics('val', loss, mse, lpips, num_gaussians=num_gaussians)
+            loss = (loss_512 + loss_256 + loss_128) / 3.0
+            return loss
+        elif self.config.use_lod or self.config.coarseness_predictions:
+            # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
+            pred1_combined, pred2_combined = self.forward(view1, view2)
+
+            color,_ = self.decoder_512(batch, pred1_combined, pred2_combined, (h, w), fused_gaussians=True) # gets (b, v, c, h, w)
+            mask = loss_mask.calculate_loss_mask(batch)
+
+            loss, mse, lpips, num_gaussians = self.calculate_loss(batch, view1, view2, pred1_combined, pred2_combined, color, mask)
+            num_gaussians = pred1_combined['means'].shape[1] + pred2_combined['means_in_other_view'].shape[1]
+            # print(f"num_gaussians: {num_gaussians}")
+            self.log_metrics('val', loss, mse, lpips, num_gaussians=num_gaussians)
+            return loss
+            # loss = self
         # else:
         #     pred1, pred2, pred1, pred2, pred1_128, pred2_128 = self.forward(view1, view2)
         
@@ -611,6 +765,19 @@ class MAST3RGaussians(L.LightningModule):
             pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = self.forward(view1, view2)
             loss = self.calculate_loss_coarseness_img_freq(view1, view2, pred1_512, pred2_512, coarseness1, coarseness2)
             self.log_metrics('test', loss=loss, mse=0, lpips=0, num_gaussians=0, train_coarseness_prediction=True)
+            return loss
+        
+        elif self.config.use_lod or self.config.coarseness_predictions:
+            # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
+            pred1_combined, pred2_combined = self.forward(view1, view2)
+
+            color,_ = self.decoder_512(batch, pred1_combined, pred2_combined, (h, w), fused_gaussians=True) # gets (b, v, c, h, w)
+            mask = loss_mask.calculate_loss_mask(batch)
+
+            loss, mse, lpips, num_gaussians = self.calculate_loss(batch, view1, view2, pred1_combined, pred2_combined, color, mask)
+            num_gaussians = pred1_combined['means'].shape[1] + pred2_combined['means_in_other_view'].shape[1]
+            # print(f"num_gaussians: {num_gaussians}")
+            self.log_metrics('test', loss, mse, lpips, num_gaussians=num_gaussians)
             return loss
         # # Predict using the encoder/decoder and calculate the loss
         # with self.benchmarker.time("encoder"):
@@ -704,6 +871,8 @@ class MAST3RGaussians(L.LightningModule):
         # coarseness_gt = torch.zeros_like(rgb_l2_losses)
         # coarseness_gt.scatter_(2, torch.argmin(rgb_l2_losses, dim=2, keepdim=True), 1) # (b, v, 3, h, w)
         coarseness_gt = torch.argmin(rgb_l2_losses, dim=2) # (b, v, h, w)
+
+        coarseness_gt = self.get_coarseness_gt(predicted_color_512, predicted_color_256, predicted_color_128, target_color)
         # coarseness_gt = coarseness_gt.squeeze(1) # (b, h, w)
         
         print(f"rgb_l2_losses: {rgb_l2_losses.shape}")
@@ -733,9 +902,11 @@ class MAST3RGaussians(L.LightningModule):
         loss = torch.tensor(0.0, device=coarseness_gt.device, dtype=torch.float32, requires_grad=True)
         for v in range(coarseness_gt.shape[0]):
             num_512, num_256, num_128 = torch.count_nonzero(coarseness_gt[v, ...] == 0), torch.count_nonzero(coarseness_gt[v, ...] == 1), torch.count_nonzero(coarseness_gt[v, ...] == 2)
+            # print(f"num_512: {num_512.item()}, num_256: {num_256.item()}, num_128: {num_128.item()}")
             weight_512, weight_256, weight_128 = 1.0/num_512.item() if num_512.item() > 0 else 0.0, 1.0/num_256.item() if num_256.item() > 0 else 0.0, 1.0/num_128.item() if num_128.item() > 0 else 0.0
             weight_sum = weight_512 + weight_256 + weight_128
             weights = torch.tensor([weight_512/weight_sum, weight_256/weight_sum, weight_128/weight_sum], device=coarseness_gt.device, dtype=torch.float32) # (3,)
+            # print(f"weights: {weights}")
             cross_entropy_loss = torch.nn.functional.cross_entropy(coarsenesses_image[v, ...].unsqueeze(0), coarseness_gt[v, ...].unsqueeze(0), weight=weights, reduction='none') # (h, w)
             
             if average_over_mask:
@@ -761,45 +932,10 @@ class MAST3RGaussians(L.LightningModule):
         #     classification_loss = (classification_loss * mask).sum() / mask.sum()
         # else:
         #     classification_loss = classification_loss.mean()
+
         del predicted_color_512, predicted_color_256, predicted_color_128
         print(f"classification_loss: {loss.item()}, {loss.shape}")
         return loss, num_gaussians
-    
-
-        # if average_over_mask:
-        #     mse_loss = (rgb_l2_loss * mask[:, None, ...]).sum() / mask.sum()
-        # else:
-        #     mse_loss = rgb_l2_loss.mean()
-
-        # print(f"flattened_color.shape: {flattened_color.shape}, flattened_target_color.shape: {flattened_target_color.shape}")
-        # LPIPS loss
-        lpips_loss = self.lpips_criterion(flattened_target_color, flattened_color, normalize=True)
-        if average_over_mask:
-            lpips_loss = (lpips_loss * flattened_mask[:, None, ...]).sum() / flattened_mask.sum()
-        else:
-            lpips_loss = lpips_loss.mean()
-
-        # Calculate the total loss
-        loss = 0
-        loss += self.config.loss.mse_loss_weight * mse_loss
-        loss += self.config.loss.lpips_loss_weight * lpips_loss
-
-        # MAST3R Loss
-        if self.config.loss.mast3r_loss_weight is not None:
-            mast3r_loss = self.mast3r_criterion(view1, view2, pred1, pred2)[0]
-            loss += self.config.loss.mast3r_loss_weight * mast3r_loss
-
-        # Masked SSIM
-        if calculate_ssim:
-            if average_over_mask:
-                ssim_val = compute_ssim.compute_ssim(flattened_target_color, flattened_color, full=True)
-                ssim_val = (ssim_val * flattened_mask[:, None, ...]).sum() / flattened_mask.sum()
-            else:
-                ssim_val = compute_ssim.compute_ssim(flattened_target_color, flattened_color, full=False)
-                ssim_val = ssim_val.mean()
-            return loss, mse_loss, lpips_loss, ssim_val, num_gaussians
-
-        return loss, mse_loss, lpips_loss, num_gaussians
 
     def create_coarseness_gaussians(self, pred1_512, pred2_512, coarseness1, coarseness2):
         pred1_coarseness, pred2_coarseness = {}, {}
@@ -813,6 +949,28 @@ class MAST3RGaussians(L.LightningModule):
         pred1_coarseness['sh'] = einops.rearrange(coarseness1, "b c h w -> b h w c 1" ).requires_grad_(True)
         pred2_coarseness['sh'] = einops.rearrange(coarseness2, "b c h w -> b h w c 1" ).requires_grad_(True)
         return pred1_coarseness, pred2_coarseness
+
+    def get_coarseness_gt(self, predicted_color_512, predicted_color_256, predicted_color_128, target_color):
+        """
+        Get the ground truth coarseness based on the predicted colors.
+        Returns a tensor of shape (b, v, h, w)  with values 0, 1, or 2 indicating the coarseness level.
+        """
+        flattened_color_512 = einops.rearrange(predicted_color_512, 'b v c h w -> (b v) c h w')
+        flattened_color_256 = einops.rearrange(predicted_color_256, 'b v c h w -> (b v) c h w')
+        flattened_color_128 = einops.rearrange(predicted_color_128, 'b v c h w -> (b v) c h w')
+        flattened_target_color = einops.rearrange(target_color, 'b v c h w -> (b v) c h w')
+        ssim_512 = compute_ssim.compute_ssim(flattened_target_color, flattened_color_512, full=True).mean(dim=1)
+        ssim_256 = compute_ssim.compute_ssim(flattened_target_color, flattened_color_256, full=True).mean(dim=1)
+        ssim_128 = compute_ssim.compute_ssim(flattened_target_color, flattened_color_128, full=True).mean(dim=1)
+        print(f"ssim_512.shape: {ssim_512.shape}, ssim_256.shape: {ssim_256.shape}, ssim_128.shape: {ssim_128.shape}")
+        ssim_img = torch.stack([torch.tensor(ssim_512).float(), torch.tensor(ssim_256).float(), torch.tensor(ssim_128).float()], dim=-1)
+        print(f"ssim_img.shape: {ssim_img.shape}")
+        ssim_img[..., 0] = ssim_img[..., 0] * (1.0 - self.config.mse_penalty_512)  # Apply penalty for 512
+        ssim_img[..., 1] = ssim_img[..., 1] * (1.0 - self.config.mse_penalty_256)  # Apply penalty for 256
+        coarseness_gt = torch.argmax(ssim_img, dim=-1)  # ((b * v), h, w)
+        coarseness_gt = einops.rearrange(coarseness_gt, '(b v) h w -> b v h w', b=predicted_color_512.shape[0], v=predicted_color_512.shape[1])
+        return coarseness_gt
+
 
     def calculate_loss_coarseness_img_freq(self, view1, view2, pred1_512, pred2_512, coarseness1, coarseness2):
         valid1 = (pred1_512["conf"] > self.config.loss.mast3r_confidence_threshold)
@@ -854,6 +1012,7 @@ class MAST3RGaussians(L.LightningModule):
                     return zero_loss, zero_loss, zero_loss, zero_loss
                 return zero_loss, zero_loss, zero_loss, 0
             target_color = target_color * mask[..., None, :, :]
+            # print(f"predicted_color.shape: {predicted_color.shape}, target_color.shape: {target_color.shape}, mask.shape: {mask.shape}")
             predicted_color = predicted_color * mask[..., None, :, :]
         if predicted_color.shape[1] != target_color.shape[1]:
             print(f"Warning: predicted_color.shape[1] ({predicted_color.shape[1]}) != target_color.shape[1] ({target_color.shape[1]}), reshaping predicted_color")
@@ -905,6 +1064,24 @@ class MAST3RGaussians(L.LightningModule):
                 f'{prefix}/loss': loss,
                 f'{prefix}/num_gaussians': num_gaussians
             }
+        elif self.config.train_3stage_gaussian_heads:
+            mse_512, mse_256, mse_128 = mse
+            lpips_512, lpips_256, lpips_128 = lpips
+            loss_512, loss_256, loss_128 = loss
+            loss_avg = (loss_512 + loss_256 + loss_128) / 3.0
+            values = {
+                f'{prefix}/loss_avg': loss_avg,
+                f'{prefix}/mse_512': mse_512,
+                f'{prefix}/mse_256': mse_256,
+                f'{prefix}/mse_128': mse_128,
+                f'{prefix}/lpips_512': lpips_512,
+                f'{prefix}/lpips_256': lpips_256,
+                f'{prefix}/lpips_128': lpips_128,
+                f'{prefix}/psnr_512': -10.0 * mse_512.log10(),
+                f'{prefix}/psnr_256': -10.0 * mse_256.log10(),
+                f'{prefix}/psnr_128': -10.0 * mse_128.log10(),
+            }
+
         else:
             values = {
                 f'{prefix}/loss': loss,
@@ -1039,7 +1216,7 @@ def run_experiment(config):
     # Training
     print('Training')
     coarse = "coarse" if config.resolution < 500 else ""
-    val_every_n_epochs = 1
+    val_every_n_epochs = 4
     print("save_dir:", config.save_dir)
     date_time = config.save_dir[-18:-1]
     checkpoint_callback = ModelCheckpoint(
@@ -1054,7 +1231,7 @@ def run_experiment(config):
         benchmark=True,
         callbacks=[
             L.pytorch.callbacks.LearningRateMonitor(logging_interval='epoch', log_momentum=True),
-            export.SaveBatchData(save_dir=config.save_dir, train_save_interval=300, coarse=config.resolution < 500, lod=config.use_lod, train_coarse_prediction=config.train_coarseness_prediction),
+            export.SaveBatchData(save_dir=config.save_dir, train_save_interval=300, coarse=config.resolution < 500, lod=config.use_lod, train_coarse_prediction=config.train_coarseness_prediction, coarseness_predictions=config.coarseness_predictions),
             checkpoint_callback
         ],
         check_val_every_n_epoch=1,
@@ -1066,7 +1243,7 @@ def run_experiment(config):
         max_epochs=config.opt.epochs,
         profiler=profiler,
         strategy="ddp_find_unused_parameters_true" if len(config.devices) > 1 else "auto",
-        # overfit_batches=1,
+        # overfit_batches=0,
         # enable_checkpointing=False
     )
     # trainer.validate(model, dataloaders=data_loader_val)

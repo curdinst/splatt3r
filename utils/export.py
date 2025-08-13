@@ -18,7 +18,7 @@ class SaveBatchData(L.Callback):
     '''A Lightning callback that occasionally saves batch inputs and outputs to disk.
     It is not critical to the training process, and can be disabled if unwanted.'''
 
-    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, lod=False, train_coarse_prediction=False):
+    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, lod=False, train_coarse_prediction=False, coarseness_predictions=False):
         self.save_dir = save_dir
         self.train_save_interval = train_save_interval
         self.val_save_interval = val_save_interval
@@ -26,6 +26,7 @@ class SaveBatchData(L.Callback):
         self.coarse = coarse
         self.lod = lod
         self.train_coarse_prediction = train_coarse_prediction
+        self.coarseness_predictions = coarseness_predictions
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx % self.train_save_interval == 0 and trainer.global_rank == 0:
@@ -111,7 +112,25 @@ class SaveBatchData(L.Callback):
             )
             log_batch_files_coarseness_pred(batch, coarseness_image, depth, mask, view1, view2, pred1_512, pred2_512, coarseness1, coarseness2, save_dir, 
                                             colors=colors, lod=self.lod, pl_module=pl_module)
+
+        elif self.coarseness_predictions:
+            # Run the batch through the model again
+            _, _, h, w = batch["context"][0]["img"].shape
+            view1, view2 = batch['context']
+            pred1_combined, pred2_combined = pl_module.forward(view1, view2)
+            print(f"pred1_combined.keys(): {pred1_combined.keys()}")
+            print(f"pred2_combined.keys(): {pred2_combined.keys()}")
+            color, depth = pl_module.decoder_512(batch, pred1_combined, pred2_combined, (h, w), fused_gaussians=True)
             
+            mask = loss_mask.calculate_loss_mask(batch)
+
+            # Save the data
+            save_dir = os.path.join(
+                self.save_dir,
+                f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
+            )
+            log_batch_files(batch, color, depth, mask, view1, view2, pred1_combined, pred2_combined, save_dir, lod=self.lod)
+
         else:
             # Run the batch through the model again
             _, _, h, w = batch["context"][0]["img"].shape
@@ -120,7 +139,7 @@ class SaveBatchData(L.Callback):
             if self.coarse or self.lod:
                 pred1, pred2 = pred1_lowres, pred2_lowres
             
-            color, depth = pl_module.decoder(batch, pred1, pred2, (h, w), fused_gaussians=self.lod)
+            color, depth = pl_module.decoder_512(batch, pred1, pred2, (h, w), fused_gaussians=self.lod)
             
             mask = loss_mask.calculate_loss_mask(batch)
 
@@ -349,7 +368,7 @@ def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pre
     color: (b, v, c, h, w) - the rendered color images for the batch
     mask: (b, v, h, w) - the loss mask for the batch
     '''
-
+    (color_512, color_256, color_128) = colors
     os.makedirs(save_dir, exist_ok=True)
 
     # Save the 3D Gaussians as a .ply file
@@ -451,6 +470,10 @@ def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pre
     for b in range(min(color.shape[0], 4)):
         torchvision.utils.save_image(color[b, ...], os.path.join(save_dir, f"sample_{b}_rendered_color.jpg"))
         torchvision.utils.save_image(color_one_hot[b, ...], os.path.join(save_dir, f"sample_{b}_rendered_color_one_hot.jpg"))
+
+        torchvision.utils.save_image(color_512[b, ...], os.path.join(save_dir, f"sample_{b}_rendered_color_512.jpg"))
+        torchvision.utils.save_image(color_256[b, ...], os.path.join(save_dir, f"sample_{b}_rendered_color_256.jpg"))
+        torchvision.utils.save_image(color_128[b, ...], os.path.join(save_dir, f"sample_{b}_rendered_color_128.jpg"))
     if depth is not None:
         for b in range(min(color.shape[0], 4)):
             torchvision.utils.save_image(depth[b, :, None, ...], os.path.join(save_dir, f"sample_{b}_rendered_depth.jpg"), normalize=True)

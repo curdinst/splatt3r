@@ -36,30 +36,30 @@ class DecoderSplattingCUDA(torch.nn.Module):
         # print(f"pred1['sh'].shape: {pred1['sh'].shape}, pred2['sh'].shape: {pred2['sh'].shape}")
         # print(f"pred1['opacities'].shape: {pred1['opacities'].shape}, pred2['opacities'].shape: {pred2['opacities'].shape}")
 
-        # if fused_gaussians:
-        #     means = torch.cat((pred1["means"], pred2["means_in_other_view"]), dim=1).unsqueeze(0)
-        #     covariances = torch.cat((pred1["covariances"], pred2["covariances"]), dim=1).unsqueeze(0)
-        #     harmonics = torch.cat((pred1["sh"], pred2["sh"]), dim=1).unsqueeze(0)
-        #     opacities = torch.cat((pred1["opacities"], pred2["opacities"]), dim=1).unsqueeze(0)
-        # elif not single_map:
-        means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
-        covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
-        harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)
-        opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
+        if fused_gaussians:
+            means = torch.cat((pred1["means"], pred2["means_in_other_view"]), dim=1).unsqueeze(0)
+            covariances = torch.cat((pred1["covariances"], pred2["covariances"]), dim=1).unsqueeze(0)
+            harmonics = torch.cat((pred1["sh"], pred2["sh"]), dim=1).unsqueeze(0)
+            opacities = torch.cat((pred1["opacities"], pred2["opacities"]), dim=1).unsqueeze(0)
+        else:
+            means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
+            covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
+            harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)
+            opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
         
-        valid_depth_mask1 = rearrange(pred1["depth_mask"], "b h w -> b (h w)")
+            valid_depth_mask1 = rearrange(pred1["depth_mask"], "b h w -> b (h w)")
 
-        valid_depth_mask2 = rearrange(pred2["depth_mask"], "b h w -> b (h w)")
-        valid_depth_masks = torch.cat((valid_depth_mask1, valid_depth_mask2), dim=1).squeeze(0)
-        means = rearrange(means, "b v h w xyz -> b (v h w) xyz")
-        covariances = rearrange(covariances, "b v h w i j -> b (v h w) i j")
-        harmonics = rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh")
-        opacities = rearrange(opacities, "b v h w 1 -> b (v h w)")
+            valid_depth_mask2 = rearrange(pred2["depth_mask"], "b h w -> b (h w)")
+            valid_depth_masks = torch.cat((valid_depth_mask1, valid_depth_mask2), dim=1).squeeze(0)
+            means = rearrange(means, "b v h w xyz -> b (v h w) xyz")
+            covariances = rearrange(covariances, "b v h w i j -> b (v h w) i j")
+            harmonics = rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh")
+            opacities = rearrange(opacities, "b v h w 1 -> b (v h w)")
 
-        means = means[:, valid_depth_masks, :]
-        covariances = covariances[:, valid_depth_masks, :, :]
-        harmonics = harmonics[:, valid_depth_masks, :, :]
-        opacities = opacities[:, valid_depth_masks]
+            means = means[:, valid_depth_masks, :]
+            covariances = covariances[:, valid_depth_masks, :, :]
+            harmonics = harmonics[:, valid_depth_masks, :, :]
+            opacities = opacities[:, valid_depth_masks]
         
 
         # device = torch.device("cuda:0")

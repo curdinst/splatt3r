@@ -74,22 +74,30 @@ def save_dpt_params(filename, savepath=None):
     modelpath = savepath + filename
     model = torch.load(modelpath, map_location='cpu')
     dpt_params = {}
+    print(model.keys())
+    # return
+    i = 0
     for key, value in model['state_dict'].items():
-        if 'gaussian_dpt' in key:
-            dpt_params[key] = value
-            print(f"Extracted {key} with shape {value.shape}")
-
-    torch.save(dpt_params, modelpath.replace('.ckpt', '_dpt_params.pth'))
+        print(key)
+        i += 1
+        # if 'gaussian_dpt' in key:
+        #     dpt_params[key] = value
+        #     print(f"Extracted {key} with shape {value.shape}")
+    print(f"Total DPT parameters extracted: {i}")
+    # torch.save(dpt_params, modelpath.replace('.ckpt', '_dpt_params.pth'))
 
 # clone_head()
 
 CHECKPOINTS_DIR = "/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/keep/"
 
 # model_name = "splatt3r_coarse=0_epoch=09_batch2"
-model_name = "splatt3r_coarse=0_epoch=02_batch1_v2"
+model_name = "25-08-06-12-31-28_epoch=04_step=13620"
+# model_name = "25-08-07-11-44-51_epoch=15_step=65376"
 
 filename = model_name + ".ckpt"
 save_dpt_params(filename, savepath=CHECKPOINTS_DIR)
+
+
 
 # filename = "epoch=19-step=1200.ckpt"
 # splatt3r_lowres = torch.load('pretrained/splatt3r_lowres.pth')

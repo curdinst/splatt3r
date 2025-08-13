@@ -94,8 +94,8 @@ def run_experiment(config):
             num_workers=config.data.num_workers,
         )
 
-        # masking_configs = ((True, False), (True, True))
-        masking_configs = [[False, False]]
+        masking_configs = ((True, False), (True, True))
+        # masking_configs = [[False, False]]
         for apply_mask, average_over_mask in masking_configs:
 
             new_save_dir = os.path.join(
@@ -111,7 +111,7 @@ def run_experiment(config):
             trainer = L.Trainer(
                 accelerator="gpu",
                 benchmark=True,
-                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, lod=config.use_lod),],
+                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, lod=config.use_lod, coarseness_predictions=config.coarseness_predictions),],
                 default_root_dir=config.save_dir,
                 devices=config.devices,
                 log_every_n_steps=10,
