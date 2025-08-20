@@ -46,20 +46,19 @@ class DecoderSplattingCUDA(torch.nn.Module):
             covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
             harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)
             opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
-        
-            valid_depth_mask1 = rearrange(pred1["depth_mask"], "b h w -> b (h w)")
-
-            valid_depth_mask2 = rearrange(pred2["depth_mask"], "b h w -> b (h w)")
-            valid_depth_masks = torch.cat((valid_depth_mask1, valid_depth_mask2), dim=1).squeeze(0)
+            if 'depth_mask' in pred1.keys():
+                valid_depth_mask1 = rearrange(pred1["depth_mask"], "b h w -> b (h w)")
+                valid_depth_mask2 = rearrange(pred2["depth_mask"], "b h w -> b (h w)")
+                valid_depth_masks = torch.cat((valid_depth_mask1, valid_depth_mask2), dim=1).squeeze(0)
             means = rearrange(means, "b v h w xyz -> b (v h w) xyz")
             covariances = rearrange(covariances, "b v h w i j -> b (v h w) i j")
             harmonics = rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh")
             opacities = rearrange(opacities, "b v h w 1 -> b (v h w)")
-
-            means = means[:, valid_depth_masks, :]
-            covariances = covariances[:, valid_depth_masks, :, :]
-            harmonics = harmonics[:, valid_depth_masks, :, :]
-            opacities = opacities[:, valid_depth_masks]
+            if 'depth_mask' in pred1.keys():
+                means = means[:, valid_depth_masks, :]
+                covariances = covariances[:, valid_depth_masks, :, :]
+                harmonics = harmonics[:, valid_depth_masks, :, :]
+                opacities = opacities[:, valid_depth_masks]
         
 
         # device = torch.device("cuda:0")

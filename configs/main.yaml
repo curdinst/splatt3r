@@ -10,7 +10,7 @@ devices: [0]
 use_profiler: False
 loggers:
   use_csv_logger: True
-  use_wandb: False
+  use_wandb: True
 
 # Model
 use_pretrained: True
@@ -28,12 +28,15 @@ pretrained_mast3r_path: './checkpoints/keep/25-08-11-20-19-28_epoch=15_step=6537
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
 checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
 
-grad_gaussian_dpt: False
-grad_gaussian_256_dpt: False
-grad_gaussian_128_dpt: False
+grad_gaussian_dpt: True
+grad_gaussian_256_dpt: True
+grad_gaussian_128_dpt: True
 
 grad_coarseness_prediction: False
+
 coarseness_predictions: True
+grad_coarseness: False
+
 train_coarseness_prediction: False
 train_coarseness_prediction_img_grad: False
 

@@ -111,7 +111,7 @@ def run_experiment(config):
             trainer = L.Trainer(
                 accelerator="gpu",
                 benchmark=True,
-                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, lod=config.use_lod, coarseness_predictions=config.coarseness_predictions),],
+                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, grad_coarseness=config.grad_coarseness, coarseness_predictions=config.coarseness_predictions),],
                 default_root_dir=config.save_dir,
                 devices=config.devices,
                 log_every_n_steps=10,

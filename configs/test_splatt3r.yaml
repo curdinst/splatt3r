@@ -1,4 +1,4 @@
-name: '%Y-%m-%d-%H-%M-%S'
+name: '%Y-%m-%d-%H-%M-%S_test'
 
 save_dir: './results/${name}/'
 
@@ -21,8 +21,7 @@ use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/keep/25-08-06-12-31-28_epoch=04_step=13620.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_3stage_freq_pred.ckpt'
 # pretrained_mast3r_path: './checkpoints/25-08-09-01-52-57_epoch=19_step=81720.ckpt'
-pretrained_mast3r_path: './checkpoints/keep/25-08-11-20-19-28_epoch=15_step=65376.ckpt' 
-
+pretrained_mast3r_path: './checkpoints/keep/25-08-11-20-19-28_epoch=15_step=65376.ckpt'
 
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse=0_epoch=04.ckpt'
 checkpoint_file_path: '/mnt/buzz_newhd/home/v4rl/splatt3r/checkpoints/'
@@ -32,7 +31,10 @@ grad_gaussian_256_dpt: False
 grad_gaussian_128_dpt: False
 
 grad_coarseness_prediction: False
+
 coarseness_predictions: True
+grad_coarseness: False
+
 train_coarseness_prediction: False
 train_coarseness_prediction_img_grad: False
 
@@ -41,12 +43,11 @@ train_3stage_gaussian_heads: False
 mse_penalty_512: 0.01
 mse_penalty_256: 0.005
 
-use_lod: False
 th_rgb: [0.1, 0.3]
 th_depth: [0.2, 0.5]
 resolution: 512
 train_head_only: False
-use_calib_and_gt_depth: True
+use_calib_and_gt_depth: False
 
 # Data
 data:

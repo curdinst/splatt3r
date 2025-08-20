@@ -18,13 +18,13 @@ class SaveBatchData(L.Callback):
     '''A Lightning callback that occasionally saves batch inputs and outputs to disk.
     It is not critical to the training process, and can be disabled if unwanted.'''
 
-    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, lod=False, train_coarse_prediction=False, coarseness_predictions=False):
+    def __init__(self, save_dir, train_save_interval=100, val_save_interval=100, test_save_interval=100, coarse=True, grad_coarseness=False, train_coarse_prediction=False, coarseness_predictions=False):
         self.save_dir = save_dir
         self.train_save_interval = train_save_interval
         self.val_save_interval = val_save_interval
         self.test_save_interval = test_save_interval
         self.coarse = coarse
-        self.lod = lod
+        self.grad_coarseness = grad_coarseness
         self.train_coarse_prediction = train_coarse_prediction
         self.coarseness_predictions = coarseness_predictions
 
@@ -51,9 +51,9 @@ class SaveBatchData(L.Callback):
 
             with torch.no_grad():
                 pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128, coarseness1, coarseness2 = pl_module.forward(view1, view2)
-                color_512, _ = pl_module.decoder_512(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
-                color_256, _ = pl_module.decoder_256(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
-                color_128, _ = pl_module.decoder_128(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
+                color_512, _ = pl_module.decoder(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
+                color_256, _ = pl_module.decoder(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
+                color_128, _ = pl_module.decoder(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
             colors = (color_512, color_256, color_128)
 
             # if apply_mask:
@@ -111,16 +111,16 @@ class SaveBatchData(L.Callback):
                 f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
             )
             log_batch_files_coarseness_pred(batch, coarseness_image, depth, mask, view1, view2, pred1_512, pred2_512, coarseness1, coarseness2, save_dir, 
-                                            colors=colors, lod=self.lod, pl_module=pl_module)
+                                            colors=colors, grad_coarseness=self.grad_coarseness, pl_module=pl_module)
 
-        elif self.coarseness_predictions:
+        elif self.coarseness_predictions or self.grad_coarseness:
             # Run the batch through the model again
             _, _, h, w = batch["context"][0]["img"].shape
             view1, view2 = batch['context']
             pred1_combined, pred2_combined = pl_module.forward(view1, view2)
             print(f"pred1_combined.keys(): {pred1_combined.keys()}")
             print(f"pred2_combined.keys(): {pred2_combined.keys()}")
-            color, depth = pl_module.decoder_512(batch, pred1_combined, pred2_combined, (h, w), fused_gaussians=True)
+            color, depth = pl_module.decoder(batch, pred1_combined, pred2_combined, (h, w), fused_gaussians=True)
             
             mask = loss_mask.calculate_loss_mask(batch)
 
@@ -129,29 +129,30 @@ class SaveBatchData(L.Callback):
                 self.save_dir,
                 f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
             )
-            log_batch_files(batch, color, depth, mask, view1, view2, pred1_combined, pred2_combined, save_dir, lod=self.lod)
+            log_batch_files(batch, color, depth, mask, view1, view2, pred1_combined, pred2_combined, save_dir, grad_coarseness=self.grad_coarseness)
 
         else:
             # Run the batch through the model again
             _, _, h, w = batch["context"][0]["img"].shape
             view1, view2 = batch['context']
             pred1, pred2, pred1_lowres, pred2_lowres, _, _, = pl_module.forward(view1, view2)
-            if self.coarse or self.lod:
+            if self.coarse or self.grad_coarseness:
                 pred1, pred2 = pred1_lowres, pred2_lowres
             
-            color, depth = pl_module.decoder_512(batch, pred1, pred2, (h, w), fused_gaussians=self.lod)
+            color, depth = pl_module.decoder(batch, pred1, pred2, (h, w), fused_gaussians=self.grad_coarseness)
             
             mask = loss_mask.calculate_loss_mask(batch)
 
             # Save the data
             save_dir = os.path.join(
+            # Save the data
                 self.save_dir,
                 f"{prefix}_epoch_{trainer.current_epoch}_batch_{batch_idx}"
             )
-            log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, lod=self.lod)
+            log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, grad_coarseness=self.grad_coarseness)
 
 
-def save_as_ply(pred1, pred2, save_path, as_list=False, lod=False):
+def save_as_ply(pred1, pred2, save_path, as_list=False, grad_coarseness=False):
     """Save the 3D Gaussians as a point cloud in the PLY format.
     Adapted loosely from PixelSplat"""
 
@@ -200,7 +201,7 @@ def save_as_ply(pred1, pred2, save_path, as_list=False, lod=False):
     # covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
     # harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
     # opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
-    if lod:
+    if grad_coarseness:
         means = torch.cat((pred1["means"], pred2["means_in_other_view"]), dim=1).unsqueeze(0)
         covariances = torch.cat((pred1["covariances"], pred2["covariances"]), dim=1).unsqueeze(0)
         harmonics = torch.cat((pred1["sh"], pred2["sh"]), dim=1).unsqueeze(0).squeeze(-1)
@@ -219,7 +220,7 @@ def save_as_ply(pred1, pred2, save_path, as_list=False, lod=False):
     # harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
     # opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
 
-    if lod:
+    if grad_coarseness:
         means = einops.rearrange(means[0], "view n xyz -> (view n) xyz").detach().cpu().numpy()
         covariances = einops.rearrange(covariances[0], "v n i j -> (v n) i j")
         harmonics = einops.rearrange(harmonics[0], "view n xyz -> (view n) xyz").detach().cpu().numpy()
@@ -299,13 +300,13 @@ def save_3d(view1, view2, pred1, pred2, save_dir, as_pointcloud=True, all_points
 
 
 @torch.no_grad()
-def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False, lod=False):
+def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_dir, should_save_3d=False, grad_coarseness=False):
     '''Save all the relevant debug files for a batch'''
 
     os.makedirs(save_dir, exist_ok=True)
 
     # Save the 3D Gaussians as a .ply file
-    # save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), lod=lod)
+    save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), grad_coarseness=True)
 
     # Save the 3D points as a point cloud and as a mesh (disabled)
     if should_save_3d:
@@ -363,7 +364,7 @@ def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_
 
 
 @torch.no_grad()
-def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pred1, pred2, coarseness1, coarseness2, save_dir, colors=None, should_save_3d=False, lod=False, pl_module=None):
+def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pred1, pred2, coarseness1, coarseness2, save_dir, colors=None, should_save_3d=False, grad_coarseness=False, pl_module=None):
     '''Save all the relevant debug files for a batch
     color: (b, v, c, h, w) - the rendered color images for the batch
     mask: (b, v, h, w) - the loss mask for the batch
@@ -372,7 +373,7 @@ def log_batch_files_coarseness_pred(batch, color, depth, mask, view1, view2, pre
     os.makedirs(save_dir, exist_ok=True)
 
     # Save the 3D Gaussians as a .ply file
-    # save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), lod=lod)
+    # save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), grad_coarseness=grad_coarseness)
 
     # Save the 3D points as a point cloud and as a mesh (disabled)
     if should_save_3d:
