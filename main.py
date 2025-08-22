@@ -317,25 +317,13 @@ class MAST3RGaussians(L.LightningModule):
                     mask_128_use = (classes == 2)
 
                 # Save mask_512_use as an image
-                # torchvision.utils.save_image(mask_512_use.float(), f"mask_512_use.png")
-                # torchvision.utils.save_image(mask_256_use.float(), f"mask_256_use.png")
-                # torchvision.utils.save_image(mask_128_use.float(), f"mask_128_use.png")
                 mask_256_xor = mask_256_use[:,::2,::2] ^ mask_256_use[:,1::2,::2] ^ mask_256_use[:,::2,1::2] ^ mask_256_use[:,1::2,1::2]
                 mask_256_use_256 = mask_256_use[:,::2,::2] & mask_256_use[:,1::2,::2] & mask_256_use[:,::2,1::2] & mask_256_use[:,1::2,1::2]
                 
-                mask_256_xor_512 = torch.nn.functional.interpolate(mask_256_xor.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
                 # print(f"mask_128_use.shape 1: {mask_128_use.shape}")
-                mask_128_xor_256 = mask_128_use[:,::2,::2] ^ mask_128_use[:,1::2,::2] ^ mask_128_use[:,::2,1::2] ^ mask_128_use[:,1::2,1::2]
                 mask_128_use_256 = mask_128_use[:,::2,::2] & mask_128_use[:,1::2,::2] & mask_128_use[:,::2,1::2] & mask_128_use[:,1::2,1::2]
                 # print(f"mask_128_use.shape 2: {mask_128_use.shape}")
-                mask_128_xor_128 = mask_128_use_256[:,::2,::2] ^ mask_128_use_256[:,1::2,::2] ^ mask_128_use_256[:,::2,1::2] ^ mask_128_use_256[:,1::2,1::2]
                 mask_128_use_128 = mask_128_use_256[:,::2,::2] & mask_128_use_256[:,1::2,::2] & mask_128_use_256[:,::2,1::2] & mask_128_use_256[:,1::2,1::2]
-                # print(f"mask_128_use.shape 3: {mask_128_use_256.shape}")
-                # print(f"mask_128_xor_256.shape: {mask_128_xor_256.shape}, mask_128_xor_128.shape: {mask_128_xor_128.shape}, mask_256_xor_512.shape: {mask_256_xor_512.shape}")
-                # mask_128_xor_256_512 = torch.nn.functional.interpolate(mask_128_xor_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                # mask_128_xor_128_256 = torch.nn.functional.interpolate(mask_128_xor_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                # print(f"mask_128_xor_128_256.shape: {mask_128_xor_128_256.shape}, mask_128_xor_256_512.shape: {mask_128_xor_256_512.shape}, mask_256_xor_512.shape: {mask_256_xor_512.shape}")
-
 
                 # mask_128_use_128 to use on 128 resolution
                 mask_128_use_128_upsampled_256 = torch.nn.functional.interpolate(mask_128_use_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
@@ -350,44 +338,9 @@ class MAST3RGaussians(L.LightningModule):
                 mask_256_to_512 = mask_256_use & ~mask_256_upsampled_512
                 mask_512_use = mask_512_use | mask_256_to_512 | mask_128_to_512
 
-                # torchvision.utils.save_image(mask_512_use.float(), f"mask_512_use_1.png")
-                # torchvision.utils.save_image(mask_256_use_256.float(), f"mask_256_use_256_1.png")
-                # torchvision.utils.save_image(mask_128_use.float(), f"mask_128_use_1.png")
-
-                # mask_256_use_upsampled = torch.nn.functional.interpolate(mask_256_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                # mask_128_use_upsampled = torch.nn.functional.interpolate(mask_128_use_128.float().unsqueeze(1), scale_factor=4, mode='nearest').squeeze(1).bool()
-                # torchvision.utils.save_image(mask_256_use_upsampled.float(), f"mask_256_use_upsampled.png")
-                # torchvision.utils.save_image(mask_128_use_upsampled.float(), f"mask_128_use_upsampled.png")
-
-                # colorimg = torch.stack([mask_512_use.float(), mask_256_use_upsampled.float(), mask_128_use_upsampled.float()], dim=1) # (3, h, w)
-                # torchvision.utils.save_image(colorimg, f"mask_combined.png")
-
-                
-
-                # mask_256 = classes[:,::2,::2] & classes[:,1::2,::2] & classes[:,::2,1::2] & classes[:,1::2,1::2]
-                # mask_128 = mask_256[:,::2,::2] & mask_256[:,1::2,::2] & mask_256[:,::2,1::2] & mask_256[:,1::2,1::2]
-                # mask_128_upsampled_256 =  torch.nn.functional.interpolate(mask_128.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                # mask_256 = mask_256 & ~mask_128_upsampled_256
-                # mask_256_upsampled_512 = torch.nn.functional.interpolate(mask_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
-                # mask_512 = ~ mask_256_upsampled_512
-
-                # mask_512_use = (mask_512 == 0)
-                # mask_256_use = (mask_256 == 1)
-                # mask_128_use = (mask_128 == 2)
-                # print(f"mask_128_use.shape: {mask_128_use.shape}, mask_256_use.shape: {mask_256_use.shape}, mask_512_use.shape: {mask_512_use.shape}")
-                # print(f"pred_128['means'].shape: {pred_128['means'].shape}, pred_256['means'].shape: {pred_256['means'].shape}, pred_512['means'].shape: {pred['means'].shape}")
-                # print(f"mask_512.shape: {mask_512.shape}, mask_256.shape: {mask_256.shape}, mask_128.shape: {mask_128.shape}")
                 for key in pred.keys():
                     if key not in ["means", "means_in_other_view", "opacities", "sh", "rotations", "scales", "covariances"]:
                         continue
-                    tensor_list = []
-                    # for b in range(pred["means"].shape[0]):
-                    #     # print(f"fusing key, {key}, pred[key].shape: {pred[key].shape}, pred_lowres[key].shape: {pred_lowres[key].shape}")
-                    #     tensor_list.append(torch.cat([pred[key][b,mask_512_use[b,...],...], 
-                    #                                   pred_256[key][b,mask_256_use[b,...],...], 
-                    #                                   pred_128[key][b,mask_128_use[b,...],...]]
-                    #                                   , dim=0))
-                    # pred_combined[key] = torch.stack(tensor_list, dim=0)
                     b=0
                     pred_combined[key] = torch.cat([pred[key][b,mask_512_use[b,...],...], 
                                                       pred_256[key][b,mask_256_use_256[b,...],...], 
@@ -802,6 +755,40 @@ class MAST3RGaussians(L.LightningModule):
             num_gaussians = pred1_combined['means'].shape[1] + pred2_combined['means_in_other_view'].shape[1]
             # print(f"num_gaussians: {num_gaussians}")
             self.log_metrics('test', loss, mse, lpips, num_gaussians=num_gaussians)
+            return loss
+        elif self.config.penalty_optimisation:
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128 = self.forward(view1, view2)
+
+            color_512, _ = self.decoder(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
+            color_256, _ = self.decoder(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
+            color_128, _ = self.decoder(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
+            colors = (color_512, color_256, color_128)
+            coarseness = self.calculate_loss_3stage(batch, view1, view2, colors, None, mask, get_gt_coarseness=True)
+            loss_512, mse_512, lpips_512, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_512, pred2_512, color_512, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_256, mse_256, lpips_256, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_256, pred2_256, color_256, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_128, mse_128, lpips_128, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_128, pred2_128, color_128, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss = (loss_512, loss_256, loss_128)
+            mse = (mse_512, mse_256, mse_128)
+            lpips = (lpips_512, lpips_256, lpips_128)
+            self.log_metrics('val', loss, mse, lpips, num_gaussians=num_gaussians)
+            loss = (loss_512 + loss_256 + loss_128) / 3.0
             return loss
         else:
             pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128 = self.forward(view1, view2)

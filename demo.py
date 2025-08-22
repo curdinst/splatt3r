@@ -9,6 +9,8 @@ import functools
 import os
 import sys
 import tempfile
+import workspace
+
 
 import gradio
 import torch
@@ -43,10 +45,11 @@ def get_reconstructed_scene(outdir, model, device, silent, image_size, ios_mode,
         pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined = output
         export.save_as_ply(pred1_combined, pred2,  os.path.join(outdir, 'gaussians1_combined.ply'), as_list=True)
     else:
-        pred1, pred2, pred1_lowres, pred2_lowres = output
+        # pred1, pred2, pred1_lowres, pred2_lowres = output
+        pred1, pred2 = output
     plyfile = os.path.join(outdir, 'gaussians.ply')
     export.save_as_ply(pred1, pred2, plyfile)
-    export.save_as_ply(pred1_lowres, pred2_lowres, os.path.join(outdir, 'gaussians_lowres.ply'))
+    # export.save_as_ply(pred1_lowres, pred2_lowres, os.path.join(outdir, 'gaussians_lowres.ply'))
     return plyfile
 
 if __name__ == '__main__':
@@ -67,9 +70,15 @@ if __name__ == '__main__':
     # weights_path = hf_hub_download(repo_id=model_name, filename=filename)
     # weights_path = "pretrained/" + filename
 
-    filename = "splatt3r_coarse=0_epoch=04.ckpt"
-    weights_path = "checkpoints/" + filename
-    model = main.MAST3RGaussians.load_from_checkpoint(weights_path, device)
+    # filename = "splatt3r_coarse=0_epoch=04.ckpt"
+    filename = "25-08-06-12-31-28_epoch=04_step=13620.ckpt"
+    # filename = "25-08-19-22-44-28_epoch=11_step=49032.ckpt"
+    weights_path = "checkpoints/keep/" + filename
+    config = workspace.load_config(sys.argv[1], sys.argv[2:])
+    if os.getenv("LOCAL_RANK", '0') == '0':
+        config = workspace.create_workspace(config)
+    # model = main.MAST3RGaussians.load_from_checkpoint(weights_path, device)
+    model = main.MAST3RGaussians.load_from_checkpoint(checkpoint_path=weights_path, device='cuda:0', config=config, strict=False)
     chkpt_tag = hash_md5(weights_path)
     print("loaded weights")
 
