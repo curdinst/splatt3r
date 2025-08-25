@@ -32,13 +32,13 @@ grad_gaussian_128_dpt: False
 
 grad_coarseness_prediction: False
 
-coarseness_predictions: True
+coarseness_predictions: False
 grad_coarseness: False
 
 train_coarseness_prediction: False
 train_coarseness_prediction_img_grad: False
 
-train_3stage_gaussian_heads: False
+train_3stage_gaussian_heads: True
 
 mse_penalty_512: 0.01
 mse_penalty_256: 0.005

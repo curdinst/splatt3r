@@ -215,10 +215,10 @@ def save_as_ply(pred1, pred2, save_path, as_list=False, grad_coarseness=False):
         harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)[..., 0]  # Only use the first harmonic
         opacities = torch.stack([pred1["opacities"], pred2["opacities"]], dim=1)
         
-    # means = pred1["means"].unsqueeze(0)  # Remove the batch dimension
-    # covariances = pred1["covariances"].unsqueeze(0)  # Remove the batch dimension
-    # harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
-    # opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
+    means = pred1["means"].unsqueeze(0)  # Remove the batch dimension
+    covariances = pred1["covariances"].unsqueeze(0)  # Remove the batch dimension
+    harmonics = pred1["sh"].unsqueeze(0)[..., 0]  # Only use the first harmonic
+    opacities = pred1["opacities"].unsqueeze(0)  # Remove the batch dimension
 
     if grad_coarseness:
         means = einops.rearrange(means[0], "view n xyz -> (view n) xyz").detach().cpu().numpy()
@@ -306,7 +306,7 @@ def log_batch_files(batch, color, depth, mask, view1, view2, pred1, pred2, save_
     os.makedirs(save_dir, exist_ok=True)
 
     # Save the 3D Gaussians as a .ply file
-    save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), grad_coarseness=True)
+    # save_as_ply(pred1, pred2, os.path.join(save_dir, f"gaussians.ply"), grad_coarseness=True)
 
     # Save the 3D points as a point cloud and as a mesh (disabled)
     if should_save_3d:

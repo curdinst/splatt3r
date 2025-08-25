@@ -39,16 +39,20 @@ def get_reconstructed_scene(outdir, model, device, silent, image_size, ios_mode,
         img['img'] = img['img'].to(device)
         img['original_img'] = img['original_img'].to(device)
         img['true_shape'] = torch.from_numpy(img['true_shape'])
-
+    combined_preds = config.coarseness_predictions
     output = model(imgs[0], imgs[1])
     if len(output) == 5:
         pred1, pred2, pred1_lowres, pred2_lowres, pred1_combined = output
-        export.save_as_ply(pred1_combined, pred2,  os.path.join(outdir, 'gaussians1_combined.ply'), as_list=True)
+        combined_preds = config.coarseness_predictions
+        export.save_as_ply(pred1_combined, pred2,  os.path.join(outdir, 'gaussians1_combined.ply'), grad_coarseness=combined_preds)
+    
     else:
         # pred1, pred2, pred1_lowres, pred2_lowres = output
-        pred1, pred2 = output
+        # pred1, pred2, _, _,_,_ = output
+        # _,_, pred1, pred2, _,_ = output
+        _,_,_,_, pred1, pred2 = output
     plyfile = os.path.join(outdir, 'gaussians.ply')
-    export.save_as_ply(pred1, pred2, plyfile)
+    export.save_as_ply(pred1, pred2, plyfile,  grad_coarseness=combined_preds)
     # export.save_as_ply(pred1_lowres, pred2_lowres, os.path.join(outdir, 'gaussians_lowres.ply'))
     return plyfile
 
@@ -69,11 +73,16 @@ if __name__ == '__main__':
 
     # weights_path = hf_hub_download(repo_id=model_name, filename=filename)
     # weights_path = "pretrained/" + filename
+    # filename = "keep/" + "25-08-07-11-44-51_epoch=15_step=65376.ckpt"
 
+    filename = "keep/" + "splatt3r_3stage_freq_pred.ckpt"
     # filename = "splatt3r_coarse=0_epoch=04.ckpt"
-    filename = "25-08-06-12-31-28_epoch=04_step=13620.ckpt"
+    # filename = "25-08-06-12-31-28_epoch=04_step=13620.ckpt"
+
+    # filename = "25-08-24-01-55-15_epoch=11_step=65376.ckpt"
     # filename = "25-08-19-22-44-28_epoch=11_step=49032.ckpt"
-    weights_path = "checkpoints/keep/" + filename
+    # filename = "keep/" + "25-08-11-20-19-28_epoch=15_step=65376_ssim_coarsepred.ckpt"
+    weights_path = "checkpoints/" + filename
     config = workspace.load_config(sys.argv[1], sys.argv[2:])
     if os.getenv("LOCAL_RANK", '0') == '0':
         config = workspace.create_workspace(config)

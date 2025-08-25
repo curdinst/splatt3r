@@ -229,16 +229,16 @@ class GaussianHead(PixelwiseTaskWithDPT):
             (1, 1.0, -2.0)  # Opacity
         ]
         start_channels = 0
-        # for out_channel, s, b in splits_and_inits:
-        #     torch.nn.init.xavier_uniform_(
-        #         final_conv_layer.weight[start_channels:start_channels+out_channel, :, :, :],
-        #         s
-        #     )
-        #     torch.nn.init.constant_(
-        #         final_conv_layer.bias[start_channels:start_channels+out_channel],
-        #         b
-        #     )
-        #     start_channels += out_channel
+        for out_channel, s, b in splits_and_inits:
+            torch.nn.init.xavier_uniform_(
+                final_conv_layer.weight[start_channels:start_channels+out_channel, :, :, :],
+                s
+            )
+            torch.nn.init.constant_(
+                final_conv_layer.bias[start_channels:start_channels+out_channel],
+                b
+            )
+            start_channels += out_channel
 
         # Low resolution Gaussian DPT -----------------------------------------------------------
         # 256x256 resolution
@@ -257,16 +257,16 @@ class GaussianHead(PixelwiseTaskWithDPT):
             (1, 1.0, -2.0)  # Opacity
         ]
         start_channels_256 = 0
-        # for out_channel, s, b in splits_and_inits_256:
-        #     torch.nn.init.xavier_uniform_(
-        #         final_conv_layer_256.weight[start_channels_256:start_channels_256+out_channel, :, :, :],
-        #         s
-        #     )
-        #     torch.nn.init.constant_(
-        #         final_conv_layer_256.bias[start_channels_256:start_channels_256+out_channel],
-        #         b
-        #     )
-        #     start_channels_256 += out_channel
+        for out_channel, s, b in splits_and_inits_256:
+            torch.nn.init.xavier_uniform_(
+                final_conv_layer_256.weight[start_channels_256:start_channels_256+out_channel, :, :, :],
+                s
+            )
+            torch.nn.init.constant_(
+                final_conv_layer_256.bias[start_channels_256:start_channels_256+out_channel],
+                b
+            )
+            start_channels_256 += out_channel
         
         # 128x128 resolution
         self.gaussian_dpt_128 = PixelwiseTaskWithDPT(
@@ -282,16 +282,16 @@ class GaussianHead(PixelwiseTaskWithDPT):
             (1, 1.0, -2.0)  # Opacity
         ]
         start_channels_128 = 0
-        # for out_channel, s, b in splits_and_inits_128:
-        #     torch.nn.init.xavier_uniform_(
-        #         final_conv_layer_128.weight[start_channels_128:start_channels_128+out_channel, :, :, :],
-        #         s
-        #     )
-        #     torch.nn.init.constant_(
-        #         final_conv_layer_128.bias[start_channels_128:start_channels_128+out_channel],
-        #         b
-        #     )
-        #     start_channels_128 += out_channel
+        for out_channel, s, b in splits_and_inits_128:
+            torch.nn.init.xavier_uniform_(
+                final_conv_layer_128.weight[start_channels_128:start_channels_128+out_channel, :, :, :],
+                s
+            )
+            torch.nn.init.constant_(
+                final_conv_layer_128.bias[start_channels_128:start_channels_128+out_channel],
+                b
+            )
+            start_channels_128 += out_channel
         # ---------------------------------------------------------------------------------------
 
         # pixlewise classifier

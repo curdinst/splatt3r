@@ -128,12 +128,18 @@ class MAST3RGaussians(L.LightningModule):
 
         pred1_512['covariances'] = geometry.build_covariance(pred1_512['scales'], pred1_512['rotations'])
         pred2_512['covariances'] = geometry.build_covariance(pred2_512['scales'], pred2_512['rotations'])
+        # print(f"mean scales 512: {pred1_512['scales'].mean()}, {pred2_512['scales'].mean()}")
+        # print(f"max scales 512: {pred1_512['scales'].max()}, {pred2_512['scales'].max()}")
 
         pred1_256['covariances'] = geometry.build_covariance(pred1_256['scales'], pred1_256['rotations'])
         pred2_256['covariances'] = geometry.build_covariance(pred2_256['scales'], pred2_256['rotations'])
+        # print(f"mean scales 256: {pred1_256['scales'].mean()}, {pred2_256['scales'].mean()}")
+        # print(f"max scales 256: {pred1_256['scales'].max()}, {pred2_256['scales'].max()}")
 
         pred1_128['covariances'] = geometry.build_covariance(pred1_128['scales'], pred1_128['rotations'])
         pred2_128['covariances'] = geometry.build_covariance(pred2_128['scales'], pred2_128['rotations'])
+        # print(f"mean scales 128: {pred1_128['scales'].mean()}, {pred2_128['scales'].mean()}")
+        # print(f"max scales 128: {pred1_128['scales'].max()}, {pred2_128['scales'].max()}")
 
         # print(f"pred1_256['covariances']: {pred1_256['covariances'].shape}")
         # print(f"pred1_256['opacities']: {pred1_256['opacities'].shape}")
@@ -152,17 +158,21 @@ class MAST3RGaussians(L.LightningModule):
             pred1_512['sh'] = pred1_512['sh'] + new_sh1
             pred2_512['sh'] = pred2_512['sh'] + new_sh2
 
-            sh1_256 = (new_sh1[:,::2,::2,:] + new_sh1[:,1::2,::2,:] + new_sh1[:,::2,1::2,:] + new_sh1[:,1::2,1::2,:])/ 4.0
-            sh2_256 = (new_sh2[:,::2,::2,:] + new_sh2[:,1::2,::2,:] + new_sh2[:,::2,1::2,:] + new_sh2[:,1::2,1::2,:])/ 4.0
+            sh1_256 = (new_sh1[:,::2,::2,...] + new_sh1[:,1::2,::2,...] + new_sh1[:,::2,1::2,...] + new_sh1[:,1::2,1::2,...])/ 4.0
+            sh2_256 = (new_sh2[:,::2,::2,...] + new_sh2[:,1::2,::2,...] + new_sh2[:,::2,1::2,...] + new_sh2[:,1::2,1::2,...])/ 4.0
             pred1_256['sh'] = pred1_256['sh'] + sh1_256
             pred2_256['sh'] = pred2_256['sh'] + sh2_256
-
-            sh1_128 = (sh1_256[:,::2,::2,:] + sh1_256[:,1::2,::2,:] + sh1_256[:,::2,1::2,:] + sh1_256[:,1::2,1::2,:])/ 4.0
-            sh2_128 = (sh2_256[:,::2,::2,:] + sh2_256[:,1::2,::2,:] + sh2_256[:,::2,1::2,:] + sh2_256[:,1::2,1::2,:])/ 4.0
+            # print(f"pred1_256['sh'].shape: {pred1_256['sh'].shape}, max: {pred1_256['sh'].max()}, min: {pred1_256['sh'].min()}")
+            # pred1_256['sh'][..., 1,:] += 1.0
+            # pred2_256['sh'][..., 1,:] += 1.0
+            
+            sh1_128 = (sh1_256[:,::2,::2,...] + sh1_256[:,1::2,::2,...] + sh1_256[:,::2,1::2,...] + sh1_256[:,1::2,1::2,...])/ 4.0
+            sh2_128 = (sh2_256[:,::2,::2,...] + sh2_256[:,1::2,::2,...] + sh2_256[:,::2,1::2,...] + sh2_256[:,1::2,1::2,...])/ 4.0
 
             pred1_128['sh'] = pred1_128['sh'] + sh1_128
             pred2_128['sh'] = pred2_128['sh'] + sh2_128
-
+            # pred1_128['sh'][..., 2, :] += 1.0
+            # pred2_128['sh'][..., 2, :] += 1.0
 
         mean_0_mask = (pred1_512['means'][:, :, :, 0] == 0.0) & (pred1_512['means'][:, :, :, 1] == 0.0) & (pred1_512['means'][:, :, :, 2] == 0.0)
         # print(f"mean_0_mask: {mean_0_mask.shape}, {mean_0_mask.sum()}")
@@ -307,14 +317,15 @@ class MAST3RGaussians(L.LightningModule):
                 else:
                     classes = coarseness
                 # print(f"calasses.shape: {classes.shape}, coarseness.shape: {coarseness.shape}")
+                valid = (pred["conf"] > self.config.loss.mast3r_confidence_threshold)
                 if 'depth_mask' in pred.keys():
                     mask_512_use = (classes == 0) & pred['depth_mask']
                     mask_256_use = (classes == 1) & pred['depth_mask']
                     mask_128_use = (classes == 2) & pred['depth_mask']
                 else:
-                    mask_512_use = (classes == 0)
-                    mask_256_use = (classes == 1)
-                    mask_128_use = (classes == 2)
+                    mask_512_use = (classes == 0) & valid
+                    mask_256_use = (classes == 1) & valid
+                    mask_128_use = (classes == 2) & valid
 
                 # Save mask_512_use as an image
                 mask_256_xor = mask_256_use[:,::2,::2] ^ mask_256_use[:,1::2,::2] ^ mask_256_use[:,::2,1::2] ^ mask_256_use[:,1::2,1::2]
@@ -333,13 +344,14 @@ class MAST3RGaussians(L.LightningModule):
                 mask_128_use_256_upsampled_512 = torch.nn.functional.interpolate(mask_128_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
                 mask_128_to_512 = mask_128_use & ~mask_128_use_256_upsampled_512
 
-                mask_128_upsampled_256 = torch.nn.functional.interpolate(mask_128_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
+                # mask_128_upsampled_256 = torch.nn.functional.interpolate(mask_128_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
                 mask_256_upsampled_512 = torch.nn.functional.interpolate(mask_256_use_256.float().unsqueeze(1), scale_factor=2, mode='nearest').squeeze(1).bool()
                 mask_256_to_512 = mask_256_use & ~mask_256_upsampled_512
                 mask_512_use = mask_512_use | mask_256_to_512 | mask_128_to_512
 
                 for key in pred.keys():
                     if key not in ["means", "means_in_other_view", "opacities", "sh", "rotations", "scales", "covariances"]:
+                        pred_combined[key] = pred[key]
                         continue
                     b=0
                     pred_combined[key] = torch.cat([pred[key][b,mask_512_use[b,...],...], 
@@ -347,6 +359,7 @@ class MAST3RGaussians(L.LightningModule):
                                                       pred_128[key][b,mask_128_use_128[b,...],...]]
                                                       , dim=0)
                     pred_combined[key] = pred_combined[key].unsqueeze(0) # add batch dimension
+                
             # pred2_combined['means_in_other_view'] = pred2_combined.pop('means')
             # pred2_combined['pts3d_in_other_view'] = pred2_combined.pop('pts3d')
 
@@ -656,6 +669,7 @@ class MAST3RGaussians(L.LightningModule):
             self.log_metrics('val', loss, mse, lpips, num_gaussians=num_gaussians)
             loss = (loss_512 + loss_256 + loss_128) / 3.0
             return loss
+        
         elif self.config.grad_coarseness or self.config.coarseness_predictions:
             # return pred1, pred2, pred1_256, pred2_256, pred1_combined, pred2_combined
             pred1_combined, pred2_combined = self.forward(view1, view2)
@@ -766,6 +780,38 @@ class MAST3RGaussians(L.LightningModule):
             mask = loss_mask.calculate_loss_mask(batch)
             colors = (color_512, color_256, color_128)
             coarseness = self.calculate_loss_3stage(batch, view1, view2, colors, None, mask, get_gt_coarseness=True)
+            loss_512, mse_512, lpips_512, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_512, pred2_512, color_512, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_256, mse_256, lpips_256, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_256, pred2_256, color_256, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss_128, mse_128, lpips_128, num_gaussians = self.calculate_loss(
+                batch, view1, view2, pred1_128, pred2_128, color_128, mask,
+                apply_mask=self.config.loss.apply_mask,
+                average_over_mask=self.config.loss.average_over_mask,
+                calculate_ssim=False
+            )
+            loss = (loss_512, loss_256, loss_128)
+            mse = (mse_512, mse_256, mse_128)
+            lpips = (lpips_512, lpips_256, lpips_128)
+            self.log_metrics('val', loss, mse, lpips, num_gaussians=num_gaussians)
+            loss = (loss_512 + loss_256 + loss_128) / 3.0
+            return loss
+        elif self.config.train_3stage_gaussian_heads:
+            pred1_512, pred2_512, pred1_256, pred2_256, pred1_128, pred2_128 = self.forward(view1, view2)
+
+            color_512, _ = self.decoder(batch, pred1_512, pred2_512, (h, w)) # gets (b, v, c, h, w)
+            color_256, _ = self.decoder(batch, pred1_256, pred2_256, (h, w)) # gets (b, v, c, h, w)
+            color_128, _ = self.decoder(batch, pred1_128, pred2_128, (h, w)) # gets (b, v, c, h, w)
+            # Calculate losses
+            mask = loss_mask.calculate_loss_mask(batch)
             loss_512, mse_512, lpips_512, num_gaussians = self.calculate_loss(
                 batch, view1, view2, pred1_512, pred2_512, color_512, mask,
                 apply_mask=self.config.loss.apply_mask,
