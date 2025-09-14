@@ -170,7 +170,7 @@ def get_3_stage_mask(img, depth_img, valid, device, H, W, th_rgb, th_depth):
     mask_128 = mask_low
     mask_256 = mask_high & ~mask_low
     mask_512 = ~mask_high & ~mask_low
-    print(f"mask_128.shape : {mask_128.shape}, mask_256.shape: {mask_256.shape}, mask_512.shape: {mask_512.shape}")
+    # print(f"mask_128.shape : {mask_128.shape}, mask_256.shape: {mask_256.shape}, mask_512.shape: {mask_512.shape}")
     corseness_classes = torch.zeros((1, H, W), device=device, dtype=torch.long) # (1, H, W)
     corseness_classes[0, mask_128] = 2
     corseness_classes[0, mask_256] = 1

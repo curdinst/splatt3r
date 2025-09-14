@@ -1,4 +1,4 @@
-name: '%Y-%m-%d-%H-%M-%S_test'
+name: '%Y-%m-%d-%H-%M-%S_penalty_optimisation'
 
 save_dir: './results/${name}/'
 
@@ -20,13 +20,7 @@ use_pretrained: True
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_coarse_256_128.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/25-08-06-12-31-28_epoch=04_step=13620.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/splatt3r_3stage_freq_pred.ckpt'
-# pretrained_mast3r_path: './checkpoints/keep/25-08-26-14-38-58_epoch=17_step=73548.ckpt'
-# pretrained_mast3r_path: './checkpoints/25-08-29-02-41-17_epoch=10_step=22473.ckpt'
-# pretrained_mast3r_path: './checkpoints/25-08-29-02-41-17_epoch=09_step=20430.ckpt'
-# pretrained_mast3r_path: './checkpoints/25-08-29-02-41-17_epoch=08_step=18387.ckpt'
-# pretrained_mast3r_path: './checkpoints/25-09-02-19-20-30_epoch=14_step=40860_train_coarsness.ckpt'
-pretrained_mast3r_path: './checkpoints/25-09-04-00-43-17_epoch=04_step=13620_final.ckpt'
-
+pretrained_mast3r_path: './checkpoints/keep/25-08-26-14-38-58_epoch=17_step=73548.ckpt'
 # pretrained_mast3r_path: './checkpoints/25-08-09-01-52-57_epoch=19_step=81720.ckpt'
 # pretrained_mast3r_path: './checkpoints/keep/25-08-11-20-19-28_epoch=15_step=65376.ckpt'
 
@@ -39,24 +33,24 @@ grad_gaussian_128_dpt: False
 
 grad_coarseness_prediction: False
 
-coarseness_predictions: True
+coarseness_predictions: False
 grad_coarseness: False
 
 train_coarseness_prediction: False
 train_coarseness_prediction_img_grad: False
 
 train_3stage_gaussian_heads: False
-train_on_single_prediction: False
 
-mse_penalty_512: 0.1372257272161434 #0.05
-mse_penalty_256: 0.02836572834904122 #0.025
-penalty_optimisation: False
+mse_penalty_512: 0.01
+mse_penalty_256: 0.005
+penalty_optimisation: True
+
 
 th_rgb: [0.1, 0.3]
 th_depth: [0.2, 0.5]
 resolution: 512
 train_head_only: False
-use_calib_and_gt_depth: False
+use_calib_and_gt_depth: True
 
 # Data
 data:

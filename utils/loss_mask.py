@@ -72,20 +72,21 @@ def calculate_in_frustum_mask(depth_1, intrinsics_1, c2w_1, depth_2, intrinsics_
 
 
 @torch.no_grad()
-def calculate_loss_mask(batch, only_first_context=False):
+def calculate_loss_mask(batch, use_context=0):
     '''Calcuate the loss mask for the target views in the batch'''
 
     target_depth = torch.stack([target_view['depthmap'] for target_view in batch['target']], dim=1)
     target_intrinsics = torch.stack([target_view['camera_intrinsics'] for target_view in batch['target']], dim=1)
     target_c2w = torch.stack([target_view['camera_pose'] for target_view in batch['target']], dim=1)
-    if not only_first_context:
+    if use_context == 0:
         context_depth = torch.stack([context_view['depthmap'] for context_view in batch['context']], dim=1)
         context_intrinsics = torch.stack([context_view['camera_intrinsics'] for context_view in batch['context']], dim=1)
         context_c2w = torch.stack([context_view['camera_pose'] for context_view in batch['context']], dim=1)
-    elif only_first_context:
-        context_depth = batch['context'][0]['depthmap'].unsqueeze(1)
-        context_intrinsics = batch['context'][0]['camera_intrinsics'].unsqueeze(1)
-        context_c2w = batch['context'][0]['camera_pose'].unsqueeze(1)
+    else:
+        index = use_context - 1
+        context_depth = batch['context'][index]['depthmap'].unsqueeze(1)
+        context_intrinsics = batch['context'][index]['camera_intrinsics'].unsqueeze(1)
+        context_c2w = batch['context'][index]['camera_pose'].unsqueeze(1)
 
     target_intrinsics = target_intrinsics[..., :3, :3]
     context_intrinsics = context_intrinsics[..., :3, :3]

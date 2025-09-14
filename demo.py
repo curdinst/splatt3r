@@ -75,7 +75,12 @@ if __name__ == '__main__':
     # weights_path = "pretrained/" + filename
     # filename = "keep/" + "25-08-07-11-44-51_epoch=15_step=65376.ckpt"
 
-    filename = "keep/" + "splatt3r_3stage_freq_pred.ckpt"
+    # filename = "keep/" + "splatt3r_3stage_freq_pred.ckpt"
+    # filename = "keep/" + "25-08-26-01-14-32_epoch=04_step=27240.ckpt"
+    # filename = "keep/" + "25-08-26-14-38-58_epoch=15_step=65376.ckpt"
+
+    filename = "keep/" + "25-08-29-02-41-17_epoch=10_step=22473_pred2.ckpt"
+    # filename = "" + "25-08-29-17-43-59_epoch=01_step=04086.ckpt" 
     # filename = "splatt3r_coarse=0_epoch=04.ckpt"
     # filename = "25-08-06-12-31-28_epoch=04_step=13620.ckpt"
 

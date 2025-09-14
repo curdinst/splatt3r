@@ -340,9 +340,10 @@ class GaussianHead(PixelwiseTaskWithDPT):
         pts3d_128 = (pts3d_256[:,:,::2,::2] + pts3d_256[:,:,1::2,::2] + pts3d_256[:,:,::2,1::2] + pts3d_256[:,:,1::2,1::2]) / 4.0
         # post process 3D pts, descriptors and confidences
         out = torch.cat([pts3d, local_features, gaussian_features], dim=1)
+        # W, H = 288, 512
         # print(f"local features shape {local_features.shape}, gaussian features shape {gaussian_features.shape}")
-        out_256 = torch.cat([pts3d_256, torch.zeros_like(local_features[...,:256,:256]), gaussian_features_256], dim=1)
-        out_128 = torch.cat([pts3d_128, torch.zeros_like(local_features[...,:128,:128]), gaussian_features_128], dim=1)
+        out_256 = torch.cat([pts3d_256, torch.zeros_like(local_features[...,:H//2,:W//2]), gaussian_features_256], dim=1)
+        out_128 = torch.cat([pts3d_128, torch.zeros_like(local_features[...,:H//4,:W//4]), gaussian_features_128], dim=1)
         if self.postprocess:
             out = gaussian_postprocess(out,
                                    depth_mode=self.depth_mode,

@@ -75,35 +75,42 @@ def run_experiment(config):
         num_workers=config.data.num_workers,
     )
 
+    total_res = {}
+    i = 0
     # Testing
     original_save_dir = config.save_dir
     results = {}
+    results_avg = {}
+    # penalty_values = ((0.8, 0.4), (0.4, 0.2), (0.2, 0.1), (0.1, 0.05), (0.05, 0.025), (0.025, 0.0125))  # (512 penalty, 256 penalty), p512 > p256
+    penalty_values = ((0.0125, 0.006), (0.006, 0.003), (0.003, 0.0015))  # (512 penalty, 256 penalty), p512 > p256
+    # masking_configs = [[False, False]]
+    apply_mask = True
+    average_over_mask = False
+    for penalty_512, penalty_256 in penalty_values:
+        total_res = {}
 
-    alpha_beta_pairs = ((0.9, 0.9), (0.7, 0.7), (0.5, 0.5), (0.3, 0.3))
-    # alpha_beta_pairs = [(0.5, 0.5)]
-    for alpha, beta in alpha_beta_pairs:
+        for alpha, beta in ((0.9, 0.9), (0.7, 0.7), (0.5, 0.5), (0.3, 0.3)):
+        # for alpha, beta in ((0.9, 0.9), (0.7, 0.7)):
 
-        test_dataset = scannetpp.get_scannet_test_dataset(
-            config.data.root,
-            alpha=alpha,
-            beta=beta,
-            resolution=config.data.resolution,
-            use_every_n_sample=100
-        )
-        data_loader_test = torch.utils.data.DataLoader(
-            test_dataset,
-            shuffle=False,
-            batch_size=config.data.batch_size,
-            num_workers=config.data.num_workers,
-        )
+            test_dataset = scannetpp.get_scannet_test_dataset(
+                config.data.root,
+                alpha=alpha,
+                beta=beta,
+                resolution=config.data.resolution,
+                use_every_n_sample=100
+            )
+            data_loader_test = torch.utils.data.DataLoader(
+                test_dataset,
+                shuffle=False,
+                batch_size=config.data.batch_size,
+                num_workers=config.data.num_workers,
+            )
 
-        masking_configs = ((True, False), (True, True))
-        masking_configs = [[True, False]]
-        for apply_mask, average_over_mask in masking_configs:
+            masking_configs = ((True, False), (True, True))
 
             new_save_dir = os.path.join(
                 original_save_dir,
-                f'alpha_{alpha}_beta_{beta}_apply_mask_{apply_mask}_average_over_mask_{average_over_mask}'
+                f'alpha_{alpha}_beta_{beta}_penalty_512_{penalty_512}_penalty_256_{penalty_256}'
             )
             os.makedirs(new_save_dir, exist_ok=True)
             model.config.save_dir = new_save_dir
@@ -114,7 +121,7 @@ def run_experiment(config):
             trainer = L.Trainer(
                 accelerator="gpu",
                 benchmark=True,
-                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, grad_coarseness=config.grad_coarseness, coarseness_predictions=config.coarseness_predictions, config=config),],
+                callbacks=[export.SaveBatchData(save_dir=config.save_dir, coarse=config.resolution < 500, grad_coarseness=config.grad_coarseness, coarseness_predictions=config.coarseness_predictions, penalty_optimisation=config.penalty_optimisation),],
                 default_root_dir=config.save_dir,
                 devices=config.devices,
                 log_every_n_steps=10,
@@ -124,13 +131,31 @@ def run_experiment(config):
             model.lpips_criterion = lpips.LPIPS('vgg', spatial=average_over_mask)
             model.config.loss.apply_mask = apply_mask
             model.config.loss.average_over_mask = average_over_mask
+            model.config.mse_penalty_512 = penalty_512
+            model.config.mse_penalty_256 = penalty_256
             res = trainer.test(model, dataloaders=data_loader_test)
             results[f"alpha: {alpha}, beta: {beta}, apply_mask: {apply_mask}, average_over_mask: {average_over_mask}"] = res
-
+            print(f"res: {res}")
+            result = res[0]
+            for key in result.keys():
+                if key not in total_res.keys():
+                    total_res[key] = 0
+                total_res[key] = total_res[key] + result[key]
+            i += 1
             # Save the results
             save_path = os.path.join(original_save_dir, 'results.json')
             with open(save_path, 'w') as f:
                 json.dump(results, f)
+        for key in total_res.keys():
+            total_res[key] /= i
+        i = 0
+        results_avg[f"p512_{penalty_512}_p256_{penalty_256}_average"] = total_res
+
+    save_path = os.path.join(original_save_dir, 'results_avg.json')
+    with open(save_path, 'w') as f:
+        json.dump(results_avg, f)
+    print(f"total res --------------- \n {total_res}")    
+    return total_res
 
 
 if __name__ == "__main__":

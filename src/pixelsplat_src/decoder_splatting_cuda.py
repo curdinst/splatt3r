@@ -17,7 +17,7 @@ class DecoderSplattingCUDA(torch.nn.Module):
             persistent=False,
         )
     
-    def forward(self, batch, pred1, pred2, image_shape, single_map=False, fused_gaussians=False):
+    def forward(self, batch, pred1, pred2, image_shape, use_pred=0, fused_gaussians=False, render_context=False):
 
         base_pose = batch['context'][0]['camera_pose'] # [b, 4, 4]
         inv_base_pose = torch.inverse(base_pose)
@@ -25,12 +25,19 @@ class DecoderSplattingCUDA(torch.nn.Module):
         extrinsics = torch.stack([target_view['camera_pose'] for target_view in batch['target']], dim=1)
         intrinsics = torch.stack([target_view['camera_intrinsics'] for target_view in batch['target']], dim=1)
         # print(f"inrinsics__: {intrinsics[0,0,0,0]}, {intrinsics[0,0,1,1]}, {intrinsics[0,0,0,2]}, {intrinsics[0,0,1,2]}")
-
         intrinsics = normalize_intrinsics(intrinsics, image_shape)[..., :3, :3]
+        extrinsics = inv_base_pose[:, None, :, :] @ extrinsics
 
+        if render_context:
+            extrinsics_context = torch.stack([context_view['camera_pose'] for context_view in batch['context']], dim=1)
+            intrinsics_context = torch.stack([context_view['camera_intrinsics'] for context_view in batch['context']], dim=1)
+            intrinsics_context = normalize_intrinsics(intrinsics_context, image_shape)[..., :3, :3]
+            extrinsics_context = inv_base_pose[:, None, :, :] @ extrinsics_context
+            b_context, v_context, _, _ = extrinsics_context.shape
+            near_context = torch.full((b_context, v_context), 0.1, device=pred1["means"].device)
+            far_context = torch.full((b_context, v_context), 1000.0, device=pred1["means"].device)
         # Rotate the ground truth extrinsics into the coordinate system used by MAST3R
         # --i.e. in the coordinate system of the first context view, normalized by the scene scale
-        extrinsics = inv_base_pose[:, None, :, :] @ extrinsics
         # print(f"pred1['means'].shape: {pred1['means'].shape}, pred2['means_in_other_view'].shape: {pred2['means_in_other_view'].shape}")
         # print(f"pred1['covariances'].shape: {pred1['covariances'].shape}, pred2['covariances'].shape: {pred2['covariances'].shape}")
         # print(f"pred1['sh'].shape: {pred1['sh'].shape}, pred2['sh'].shape: {pred2['sh'].shape}")
@@ -41,7 +48,7 @@ class DecoderSplattingCUDA(torch.nn.Module):
             covariances = torch.cat((pred1["covariances"], pred2["covariances"]), dim=1).unsqueeze(0)
             harmonics = torch.cat((pred1["sh"], pred2["sh"]), dim=1).unsqueeze(0)
             opacities = torch.cat((pred1["opacities"], pred2["opacities"]), dim=1).unsqueeze(0)
-        else:
+        elif use_pred == 0:
             means = torch.stack([pred1["means"], pred2["means_in_other_view"]], dim=1)
             covariances = torch.stack([pred1["covariances"], pred2["covariances"]], dim=1)
             harmonics = torch.stack([pred1["sh"], pred2["sh"]], dim=1)
@@ -55,6 +62,24 @@ class DecoderSplattingCUDA(torch.nn.Module):
             harmonics = rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh")
             opacities = rearrange(opacities, "b v h w 1 -> b (v h w)")
             if 'depth_mask' in pred1.keys():
+                means = means[:, valid_depth_masks, :]
+                covariances = covariances[:, valid_depth_masks, :, :]
+                harmonics = harmonics[:, valid_depth_masks, :, :]
+                opacities = opacities[:, valid_depth_masks]
+        else:
+            means = pred1["means"].unsqueeze(1) if use_pred == 1 else pred2["means_in_other_view"].unsqueeze(1)
+            covariances = pred1["covariances"].unsqueeze(1) if use_pred == 1 else pred2["covariances"].unsqueeze(1)
+            harmonics = pred1["sh"].unsqueeze(1) if use_pred == 1 else pred2["sh"].unsqueeze(1)
+            opacities = pred1["opacities"].unsqueeze(1) if use_pred == 1 else pred2["opacities"].unsqueeze(1)
+
+            if 'depth_mask' in pred1.keys() or 'depth_mask' in pred2.keys():
+                valid_depth_mask = rearrange(pred1["depth_mask"], "b h w -> b (h w)") if use_pred == 1 else rearrange(pred2["depth_mask"], "b h w -> b (h w)")
+                valid_depth_masks = valid_depth_mask.squeeze(0)
+            means = rearrange(means, "b v h w xyz -> b (v h w) xyz")
+            covariances = rearrange(covariances, "b v h w i j -> b (v h w) i j")
+            harmonics = rearrange(harmonics, "b v h w c d_sh -> b (v h w) c d_sh")
+            opacities = rearrange(opacities, "b v h w 1 -> b (v h w)")
+            if 'depth_mask' in pred1.keys() or 'depth_mask' in pred2.keys():
                 means = means[:, valid_depth_masks, :]
                 covariances = covariances[:, valid_depth_masks, :, :]
                 harmonics = harmonics[:, valid_depth_masks, :, :]
@@ -76,6 +101,21 @@ class DecoderSplattingCUDA(torch.nn.Module):
         # print(f"v: {v}, b: {b}, image_shape: {image_shape}")
         near = torch.full((b, v), 0.1, device=means.device)
         far = torch.full((b, v), 1000.0, device=means.device)
+
+        if render_context:
+            color_context = render_cuda(
+                rearrange(extrinsics_context, "b v i j -> (b v) i j"),
+                rearrange(intrinsics_context, "b v i j -> (b v) i j"),
+                rearrange(near_context, "b v -> (b v)"),
+                rearrange(far_context, "b v -> (b v)"),
+                image_shape,
+                repeat(self.background_color, "c -> (b v) c", b=b_context, v=v_context),
+                repeat(means, "b g xyz -> (b v) g xyz", v=v_context),
+                repeat(covariances, "b g i j -> (b v) g i j", v=v_context),
+                repeat(harmonics, "b g c d_sh -> (b v) g c d_sh", v=v_context),
+                repeat(opacities, "b g -> (b v) g", v=v_context),
+            )
+
         if not fused_gaussians:
             color = render_cuda(
                 rearrange(extrinsics, "b v i j -> (b v) i j"),
@@ -115,6 +155,9 @@ class DecoderSplattingCUDA(torch.nn.Module):
         # mem_used_MB = (total - free) / 1024 ** 2
         # print("mem_used_MB: 11", mem_used_MB)
         color = rearrange(color, "(b v) c h w -> b v c h w", b=b, v=v)
+        if render_context:
+            color_context = rearrange(color_context, "(b v) c h w -> b v c h w", b=b_context, v=v_context)
+            return color, color_context
 
         # print(f"color.shape: {color.shape}")
         # for i in range(color.shape[0]):  # Iterate over batch

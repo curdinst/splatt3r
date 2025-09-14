@@ -185,7 +185,7 @@ def get_scannet_test_dataset(root, alpha, beta, resolution, use_every_n_sample=1
     data = ScanNetPPData(root, 'val')
 
     samples_file = f'data/scannetpp/test_set_{alpha}_{beta}.json'
-    print(f"Loading samples from: {samples_file}")
+    # print(f"Loading samples from: {samples_file}")
     with open(samples_file, 'r') as f:
         samples = json.load(f)
     samples = samples[::use_every_n_sample]
